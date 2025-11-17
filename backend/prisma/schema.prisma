@@ -1,0 +1,368 @@
+// Prisma schema matching existing MySQL database structure
+generator client {
+  provider        = "prisma-client-js"
+  previewFeatures = ["fullTextIndex"]
+}
+
+datasource db {
+  provider = "mysql"
+  url      = env("DATABASE_URL")
+}
+
+// Admin users (for admin panel authentication)
+model User {
+  id        BigInt    @id @default(autoincrement()) @db.UnsignedBigInt
+  username  String    @db.VarChar(191)
+  password  String    @db.VarChar(255)
+  roleId    BigInt?   @map("role_id") @db.UnsignedBigInt
+  createdAt DateTime? @map("created_at") @default(now())
+  updatedAt DateTime? @map("updated_at") @updatedAt
+
+  role      Role?     @relation(fields: [roleId], references: [id], onDelete: SetNull)
+
+  @@unique([username])
+  @@map("users")
+}
+
+// Borrowers (mobile app users/customers)
+model Borrower {
+  id           BigInt                     @id @default(autoincrement()) @db.UnsignedBigInt
+  fullName     String                     @map("full_name") @db.VarChar(255)
+  email        String?                    @db.VarChar(255)
+  password     String?                    @db.VarChar(255) // Added for mobile app authentication
+  phone        String?                    @db.VarChar(32)
+  address      String?                    @db.VarChar(255)
+  sex          String?                    // MySQL enum: 'Male','Female','Prefer not to say'
+  occupation  String?                    @db.VarChar(255)
+  birthday     DateTime?                  @db.Date
+  monthlyIncome Decimal?                  @map("monthly_income") @db.Decimal(12, 2)
+  civilStatus  String?                    @map("civil_status") @db.VarChar(64)
+  referenceNo   String?                    @map("reference_no") @db.VarChar(128)
+  status       BorrowerStatus             @default(active)
+  isArchived   Boolean                    @map("is_archived") @default(false)
+  archivedAt   DateTime?                  @map("archived_at")
+  createdAt    DateTime?                  @map("created_at") @default(now())
+  updatedAt    DateTime?                  @map("updated_at") @updatedAt
+  deletedAt    DateTime?                  @map("deleted_at")
+
+  loans Loan[]
+  documents Document[]
+  notifications Notification[]
+
+  @@unique([email])
+  @@index([phone])
+  @@index([referenceNo])
+  @@index([status])
+  @@index([isArchived])
+  @@index([fullName, email])
+  @@map("borrowers")
+}
+
+// BorrowerSex enum removed - using String type instead to handle MySQL enum with spaces
+
+enum BorrowerStatus {
+  active
+  inactive
+  delinquent
+  closed
+  blacklisted
+}
+
+// Loans table matching existing structure
+model Loan {
+  id                  BigInt           @id @default(autoincrement()) @db.UnsignedBigInt
+  reference           String           @unique @db.VarChar(50)
+  borrowerId          BigInt?          @map("borrower_id") @db.UnsignedBigInt
+  disbursementAccountId BigInt?        @map("disbursement_account_id") @db.UnsignedBigInt
+  borrowerName        String           @map("borrower_name") @db.VarChar(160)
+  principalAmount     Decimal          @map("principal_amount") @db.Decimal(14, 2)
+  interestRate        Decimal          @map("interest_rate") @default(0.0000) @db.Decimal(7, 4)
+  applicationDate     DateTime         @map("application_date") @db.Date
+  maturityDate        DateTime?        @map("maturity_date") @db.Date
+  releaseDate         DateTime?        @map("release_date") @db.Date
+  status              LoanStatus       @default(new_application)
+  totalDisbursed      Decimal          @map("total_disbursed") @default(0.00) @db.Decimal(14, 2)
+  totalPaid           Decimal          @map("total_paid") @default(0.00) @db.Decimal(14, 2)
+  totalPenalties      Decimal          @map("total_penalties") @default(0.00) @db.Decimal(14, 2)
+  penaltyGraceDays    Int              @map("penalty_grace_days") @default(0) @db.UnsignedInt
+  penaltyDailyRate    Decimal          @map("penalty_daily_rate") @default(0.001000) @db.Decimal(7, 6)
+  isActive            Boolean          @map("is_active") @default(true)
+  remarks             String?          @db.VarChar(255)
+  createdAt           DateTime?        @map("created_at") @default(now())
+  updatedAt           DateTime?        @map("updated_at") @updatedAt
+
+  borrower            Borrower?        @relation(fields: [borrowerId], references: [id], onDelete: SetNull)
+  repayments          Repayment[]
+  bankTransactions    BankTransaction[]
+  documents           Document[]
+  notifications       Notification[]
+
+  @@index([applicationDate])
+  @@index([releaseDate])
+  @@index([maturityDate])
+  @@index([status])
+  @@index([isActive])
+  @@index([status, isActive])
+  @@map("loans")
+}
+
+enum LoanStatus {
+  new_application
+  under_review
+  approved
+  for_release
+  disbursed
+  closed
+  rejected
+  cancelled
+  restructured
+}
+
+// Repayments (payment schedule)
+model Repayment {
+  id            BigInt    @id @default(autoincrement()) @db.UnsignedBigInt
+  loanId        BigInt    @map("loan_id") @db.UnsignedBigInt
+  dueDate       DateTime  @map("due_date") @db.Date
+  amountDue     Decimal   @map("amount_due") @db.Decimal(14, 2)
+  amountPaid   Decimal   @map("amount_paid") @default(0.00) @db.Decimal(14, 2)
+  paidAt       DateTime? @map("paid_at") @db.DateTime
+  penaltyApplied Decimal  @map("penalty_applied") @default(0.00) @db.Decimal(14, 2)
+  note         String?   @db.VarChar(255)
+  createdAt    DateTime? @map("created_at") @default(now())
+  updatedAt    DateTime? @map("updated_at") @updatedAt
+
+  loan Loan @relation(fields: [loanId], references: [id], onDelete: Cascade)
+
+  @@index([loanId, dueDate])
+  @@index([dueDate])
+  @@map("repayments")
+}
+
+// Bank accounts
+model BankAccount {
+  id        BigInt           @id @default(autoincrement()) @db.UnsignedBigInt
+  code      String?          @unique @db.VarChar(32)
+  name      String           @db.VarChar(128)
+  timezone  String           @default("Asia/Manila") @db.VarChar(64)
+  createdAt DateTime?        @map("created_at")
+  updatedAt DateTime?        @map("updated_at")
+
+  bankTransactions BankTransaction[]
+  bankStatements   BankStatement[]
+
+  @@map("bank_accounts")
+}
+
+// Bank transactions
+model BankTransaction {
+  id              BigInt                 @id @default(autoincrement()) @db.UnsignedBigInt
+  bankAccountId   BigInt                 @map("bank_account_id") @db.UnsignedBigInt
+  accountId       BigInt?                @map("account_id") @db.UnsignedBigInt
+  loanId          BigInt?                @map("loan_id") @db.UnsignedBigInt
+  borrowerId      BigInt?                @map("borrower_id") @db.UnsignedBigInt
+  refCode         String?                @map("ref_code") @db.VarChar(32)
+  kind            BankTransactionKind     @default(bank)
+  txDate          DateTime               @map("tx_date") @db.Date
+  contactDisplay  String?                @map("contact_display") @db.VarChar(191)
+  description     String?                @db.VarChar(255)
+  spent           Decimal?               @db.Decimal(14, 2)
+  received        Decimal?               @db.Decimal(14, 2)
+  reconcileStatus BankReconcileStatus?   @map("reconcile_status") @default(pending)
+  ledgerContact   String?                @map("ledger_contact") @db.VarChar(191)
+  accountName     String?                @map("account_name") @db.VarChar(191)
+  remarks         String?                @db.VarChar(255)
+  txClass         String?                @map("tx_class") @db.VarChar(191)
+  source          String?                @db.VarChar(64)
+  status          BankTransactionStatus  @default(pending)
+  postedAt        DateTime?             @map("posted_at")
+  isTransfer      Boolean                @map("is_transfer") @default(false)
+  bankText        String?                @map("bank_text") @db.VarChar(255)
+  matchId         BigInt?                @map("match_id") @db.UnsignedBigInt
+  createdAt       DateTime?              @map("created_at")
+  updatedAt       DateTime?              @map("updated_at")
+
+  bankAccount     BankAccount            @relation(fields: [bankAccountId], references: [id], onDelete: Cascade)
+  loan            Loan?                  @relation(fields: [loanId], references: [id], onDelete: SetNull)
+
+  @@index([txDate])
+  @@index([kind])
+  @@index([reconcileStatus])
+  @@index([status])
+  @@index([postedAt])
+  @@index([isTransfer])
+  @@index([matchId])
+  @@fulltext([contactDisplay, description, ledgerContact, accountName, remarks, txClass])
+  @@map("bank_transactions")
+}
+
+enum BankTransactionKind {
+  bank
+  journal
+}
+
+enum BankReconcileStatus {
+  pending
+  ok
+  match
+}
+
+enum BankTransactionStatus {
+  pending
+  posted
+  excluded
+}
+
+// Bank statements
+model BankStatement {
+  id              BigInt    @id @default(autoincrement()) @db.UnsignedBigInt
+  bankAccountId   BigInt    @map("bank_account_id") @db.UnsignedBigInt
+  statementEndDate DateTime @map("statement_end_date") @db.Date
+  endingBalance   Decimal   @map("ending_balance") @default(0.00) @db.Decimal(18, 2)
+  sourceName      String?   @map("source_name") @db.VarChar(255)
+  createdAt       DateTime? @map("created_at")
+  updatedAt       DateTime? @map("updated_at")
+
+  bankAccount     BankAccount @relation(fields: [bankAccountId], references: [id], onDelete: Cascade)
+
+  @@index([bankAccountId])
+  @@index([statementEndDate])
+  @@map("bank_statements")
+}
+
+// Roles (for admin users)
+model Role {
+  id        BigInt    @id @default(autoincrement()) @db.UnsignedBigInt
+  name      String    @db.VarChar(64)
+  slug      String    @unique @db.VarChar(64)
+  createdAt DateTime? @map("created_at")
+  updatedAt DateTime? @map("updated_at")
+
+  users           User[]
+  rolePermissions RolePermission[]
+
+  @@map("roles")
+}
+
+// Permissions
+model Permission {
+  id        BigInt    @id @default(autoincrement()) @db.UnsignedBigInt
+  name      String    @db.VarChar(128)
+  key       String    @unique @db.VarChar(64)
+  group     String?   @db.VarChar(64)
+  createdAt DateTime? @map("created_at")
+  updatedAt DateTime? @map("updated_at")
+
+  rolePermissions RolePermission[]
+
+  @@map("permissions")
+}
+
+// Role permissions junction table
+model RolePermission {
+  roleId       BigInt    @map("role_id") @db.UnsignedBigInt
+  permissionId BigInt    @map("permission_id") @db.UnsignedBigInt
+  allowed      Boolean   @default(false)
+  createdAt    DateTime? @map("created_at")
+  updatedAt    DateTime? @map("updated_at")
+
+  role       Role       @relation(fields: [roleId], references: [id], onDelete: Cascade)
+  permission Permission @relation(fields: [permissionId], references: [id], onDelete: Cascade)
+
+  @@id([roleId, permissionId])
+  @@map("role_permission")
+}
+
+// Chart of accounts (accounting)
+model ChartOfAccount {
+  id          BigInt          @id @default(autoincrement()) @db.UnsignedBigInt
+  code        String          @unique @db.VarChar(32)
+  name        String          @db.VarChar(128)
+  description String?         @db.VarChar(512)
+  report      String // MySQL enum: 'Balance Sheets','Profit and Losses'
+  groupAccount String @map("group_account") // MySQL enum: 'Assets','Liabilities','Equity','Revenue (Income)','Expense (COGS)','Expenses'
+  normalBalance ChartNormalBalance? @map("normal_balance")
+  debitEffect   ChartEffect?  @map("debit_effect")
+  creditEffect  ChartEffect? @map("credit_effect")
+  isActive    Boolean         @map("is_active") @default(true)
+  sortOrder   Int             @map("sort_order") @default(0) @db.UnsignedInt
+  createdAt   DateTime?       @map("created_at")
+  updatedAt   DateTime?       @map("updated_at")
+
+  @@map("chart_of_accounts")
+}
+
+// ChartReport and ChartGroupAccount enums removed - using String type to handle MySQL enums with spaces
+
+enum ChartNormalBalance {
+  Debit
+  Credit
+}
+
+enum ChartEffect {
+  Increase
+  Decrease
+}
+
+// Documents (receipts, IDs, agreements, etc.)
+model Document {
+  id           BigInt          @id @default(autoincrement()) @db.UnsignedBigInt
+  borrowerId   BigInt?         @map("borrower_id") @db.UnsignedBigInt
+  loanId       BigInt?         @map("loan_id") @db.UnsignedBigInt
+  documentType DocumentType    @map("document_type")
+  fileName     String          @map("file_name") @db.VarChar(255)
+  fileUrl      String          @map("file_url") @db.VarChar(512)
+  fileSize     BigInt?         @map("file_size") @db.UnsignedBigInt
+  mimeType     String?         @map("mime_type") @db.VarChar(100)
+  uploadedAt   DateTime?       @map("uploaded_at") @default(now())
+  createdAt    DateTime?       @map("created_at") @default(now())
+  updatedAt    DateTime?       @map("updated_at") @updatedAt
+
+  borrower     Borrower?       @relation(fields: [borrowerId], references: [id], onDelete: Cascade)
+  loan         Loan?           @relation(fields: [loanId], references: [id], onDelete: SetNull)
+
+  @@index([borrowerId])
+  @@index([loanId])
+  @@index([documentType])
+  @@index([uploadedAt])
+  @@map("documents")
+}
+
+enum DocumentType {
+  PRIMARY_ID
+  SECONDARY_ID
+  AGREEMENT
+  RECEIPT
+  OTHER
+}
+
+// Notifications for borrowers
+model Notification {
+  id          BigInt              @id @default(autoincrement()) @db.UnsignedBigInt
+  borrowerId BigInt               @map("borrower_id") @db.UnsignedBigInt
+  loanId     BigInt?              @map("loan_id") @db.UnsignedBigInt
+  type       NotificationType     @default(info)
+  title      String               @db.VarChar(255)
+  message    String               @db.Text
+  isRead     Boolean              @map("is_read") @default(false)
+  readAt     DateTime?            @map("read_at") @db.DateTime
+  createdAt  DateTime?            @map("created_at") @default(now())
+  updatedAt  DateTime?            @map("updated_at") @updatedAt
+
+  borrower   Borrower?            @relation(fields: [borrowerId], references: [id], onDelete: Cascade)
+  loan       Loan?                @relation(fields: [loanId], references: [id], onDelete: SetNull)
+
+  @@index([borrowerId])
+  @@index([loanId])
+  @@index([isRead])
+  @@index([createdAt])
+  @@map("notifications")
+}
+
+enum NotificationType {
+  info
+  reminder
+  approval
+  payment_received
+  payment_due
+  loan_status_change
+}
