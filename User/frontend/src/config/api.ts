@@ -213,7 +213,7 @@ export const getCurrentApiBaseUrl = (): string => {
 // Create axios instance
 export const api = axios.create({
   baseURL: `${API_BASE_URL}/api/v1`,
-  timeout: 8000, // 8 second timeout
+  timeout: 30000, // 30 second timeout (increased for file uploads)
   headers: {
     'Content-Type': 'application/json',
   },
@@ -226,6 +226,35 @@ api.interceptors.request.use(
       const token = await AsyncStorage.getItem('authToken');
       if (token) {
         config.headers.Authorization = `Bearer ${token}`;
+      }
+      
+      // If FormData, handle Content-Type properly
+      if (config.data instanceof FormData) {
+        // If Content-Type is explicitly set to 'multipart/form-data', keep it
+        // Otherwise, let axios set it automatically with boundary
+        if (config.headers['Content-Type'] !== 'multipart/form-data') {
+          delete config.headers['Content-Type'];
+        }
+        // Increase timeout for file uploads
+        if (!config.timeout || config.timeout < 60000) {
+          config.timeout = 60000; // 60 seconds for file uploads
+        }
+        console.log('📤 FormData upload detected, timeout set to 60s');
+      } else {
+        // Log JSON requests for demand letter endpoint to debug missing fields
+        if (config.url?.includes('demand-letter/preview') && config.data) {
+          console.log('🔍 Axios Request Interceptor - Demand Letter Preview:');
+          console.log('URL:', config.url);
+          console.log('Request Data:', JSON.stringify(config.data, null, 2));
+          if (config.data.borrower) {
+            console.log('Borrower object keys:', Object.keys(config.data.borrower));
+            console.log('Borrower object:', JSON.stringify(config.data.borrower, null, 2));
+            console.log('Has barangay:', 'barangay' in config.data.borrower);
+            console.log('Has city:', 'city' in config.data.borrower);
+            console.log('Barangay value:', config.data.borrower.barangay);
+            console.log('City value:', config.data.borrower.city);
+          }
+        }
       }
     } catch (error) {
       console.error('Error getting auth token:', error);

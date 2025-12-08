@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useState, useCallback } from 'react';
 import {
   View,
   Text,
@@ -10,11 +10,13 @@ import {
   RefreshControl,
   Modal,
   Image,
+  Alert,
 } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import { Ionicons } from '@expo/vector-icons';
 import { useRouter, useLocalSearchParams } from 'expo-router';
 import { api } from '../../src/config/api';
+import { WebView } from 'react-native-webview';
 
 interface Loan {
   id: string;
@@ -63,14 +65,11 @@ const LoanDetailsScreen = () => {
   const [receiptModalVisible, setReceiptModalVisible] = useState(false);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
+  const [demandLetter, setDemandLetter] = useState<string | null>(null);
+  const [demandLetterModalVisible, setDemandLetterModalVisible] = useState(false);
+  const [generatingDemandLetter, setGeneratingDemandLetter] = useState(false);
 
-  useEffect(() => {
-    if (loanId) {
-      fetchLoanDetails();
-    }
-  }, [loanId]);
-
-  const fetchLoanDetails = async () => {
+  const fetchLoanDetails = useCallback(async () => {
     try {
       const [loanRes, paymentsRes] = await Promise.all([
         api.get(`/loans/${loanId}`),
@@ -90,7 +89,13 @@ const LoanDetailsScreen = () => {
       setLoading(false);
       setRefreshing(false);
     }
-  };
+  }, [loanId]);
+
+  useEffect(() => {
+    if (loanId) {
+      fetchLoanDetails();
+    }
+  }, [loanId, fetchLoanDetails]);
 
   const onRefresh = () => {
     setRefreshing(true);
@@ -151,12 +156,96 @@ const LoanDetailsScreen = () => {
     setReceiptModalVisible(true);
   };
 
-  const getRepaymentStatus = (repayment: Loan['repayments'][0]) => {
+  const handleGenerateDemandLetter = async () => {
+    if (!loanId) return;
+
+    try {
+      setGeneratingDemandLetter(true);
+      const res = await api.post('/legal/demand-letter', {
+        loanId,
+        daysToComply: 5,
+      });
+
+      if (res.data?.data?.letter) {
+        setDemandLetter(res.data.data.letter);
+        setDemandLetterModalVisible(true);
+      }
+    } catch (error: any) {
+      console.error('Error generating demand letter:', error);
+      const errorMessage = error.response?.data?.message || 'Failed to generate demand letter';
+      Alert.alert('Error', errorMessage);
+    } finally {
+      setGeneratingDemandLetter(false);
+    }
+  };
+
+  const generateDocumentHTML = (content: string, title: string): string => {
+    const htmlContent = content
+      .split('\n')
+      .map((line) => {
+        if (line.trim() === '') return '<br/>';
+        if (line === line.toUpperCase() && line.length > 5 && !line.includes('(') && !line.includes('Php')) {
+          return `<h2 style="font-size: 16px; font-weight: bold; margin-top: 20px; margin-bottom: 10px; text-align: center;">${line}</h2>`;
+        }
+        if (line.includes('________________') || line.includes('___')) {
+          return `<p style="margin: 10px 0; text-align: center; font-size: 12px;">${line}</p>`;
+        }
+        return `<p style="margin: 8px 0; line-height: 1.6; font-size: 12px; text-align: justify;">${line}</p>`;
+      })
+      .join('');
+
+    return `
+      <!DOCTYPE html>
+      <html>
+        <head>
+          <meta name="viewport" content="width=device-width, initial-scale=1.0">
+          <style>
+            body {
+              font-family: 'Times New Roman', serif;
+              padding: 20px;
+              background-color: #1a1a2e;
+              color: #ffffff;
+              line-height: 1.8;
+              max-width: 800px;
+              margin: 0 auto;
+            }
+            h2 {
+              color: #ffffff;
+              border-bottom: 2px solid #4EFA8A;
+              padding-bottom: 10px;
+            }
+            p {
+              color: #e0e0e0;
+            }
+            @media print {
+              body {
+                background-color: white;
+                color: black;
+              }
+              h2 {
+                color: black;
+                border-bottom: 2px solid black;
+              }
+              p {
+                color: black;
+              }
+            }
+          </style>
+        </head>
+        <body>
+          <h1 style="text-align: center; font-size: 18px; margin-bottom: 30px; color: #4EFA8A;">${title}</h1>
+          ${htmlContent}
+        </body>
+      </html>
+    `;
+  };
+
+  const getRepaymentStatus = (repayment: NonNullable<Loan['repayments']>[0]) => {
     const due = parseFloat(repayment.amountDue);
     const paid = parseFloat(repayment.amountPaid);
     const penalty = parseFloat(repayment.penaltyApplied);
     const total = due + penalty;
-    const outstanding = total - paid;
+    // const outstanding = total - paid; // Not used in this function
     const dueDate = new Date(repayment.dueDate);
     const today = new Date();
     today.setHours(0, 0, 0, 0);
@@ -201,8 +290,8 @@ const LoanDetailsScreen = () => {
 
   const statusInfo = getStatusInfo(loan.status);
   const outstanding = calculateOutstanding();
-  const totalAmount = parseFloat(loan.principalAmount);
-  const totalPaid = parseFloat(loan.totalPaid);
+  // const totalAmount = parseFloat(loan.principalAmount); // Not used
+  // const totalPaid = parseFloat(loan.totalPaid); // Not used (loan.totalPaid is used directly)
   const totalPenalties = parseFloat(loan.totalPenalties);
   const interestRate = parseFloat(loan.interestRate) * 100; // Convert to percentage
 
@@ -551,6 +640,20 @@ const LoanDetailsScreen = () => {
               <Ionicons name="receipt-outline" size={20} color="#ffffff" />
               <Text style={styles.actionButtonText}>Make Payment</Text>
             </TouchableOpacity>
+            <TouchableOpacity
+              style={[styles.actionButton, styles.demandLetterButton]}
+              onPress={handleGenerateDemandLetter}
+              disabled={generatingDemandLetter}
+            >
+              {generatingDemandLetter ? (
+                <ActivityIndicator color="#ffffff" />
+              ) : (
+                <>
+                  <Ionicons name="document-text-outline" size={20} color="#ffffff" />
+                  <Text style={styles.actionButtonText}>View Demand Letter</Text>
+                </>
+              )}
+            </TouchableOpacity>
           </View>
         )}
       </ScrollView>
@@ -578,6 +681,37 @@ const LoanDetailsScreen = () => {
                 source={{ uri: getReceiptImageUrl(selectedReceipt) }}
                 style={styles.receiptModalImage}
                 resizeMode="contain"
+              />
+            )}
+          </View>
+        </View>
+      </Modal>
+
+      {/* Demand Letter Modal */}
+      <Modal
+        visible={demandLetterModalVisible}
+        transparent={true}
+        animationType="slide"
+        onRequestClose={() => setDemandLetterModalVisible(false)}
+      >
+        <View style={styles.receiptModalContainer}>
+          <View style={styles.receiptModalContent}>
+            <View style={styles.receiptModalHeader}>
+              <Text style={styles.receiptModalTitle}>Final Demand Letter</Text>
+              <TouchableOpacity
+                onPress={() => setDemandLetterModalVisible(false)}
+                style={styles.receiptModalCloseButton}
+              >
+                <Ionicons name="close" size={28} color="#fff" />
+              </TouchableOpacity>
+            </View>
+            {demandLetter && (
+              <WebView
+                source={{
+                  html: generateDocumentHTML(demandLetter, 'Final Demand Letter'),
+                }}
+                style={styles.demandLetterWebView}
+                showsVerticalScrollIndicator={true}
               />
             )}
           </View>
@@ -932,6 +1066,48 @@ const styles = StyleSheet.create({
     color: '#000',
     fontSize: 16,
     fontWeight: '700',
+  },
+  demandLetterButton: {
+    marginTop: 12,
+    backgroundColor: '#f97316',
+  },
+  demandLetterWebView: {
+    flex: 1,
+    backgroundColor: '#1a1a2e',
+  },
+  receiptModalContainer: {
+    flex: 1,
+    backgroundColor: 'rgba(0, 0, 0, 0.8)',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  receiptModalContent: {
+    width: '90%',
+    height: '80%',
+    backgroundColor: '#1a1a2e',
+    borderRadius: 12,
+    overflow: 'hidden',
+  },
+  receiptModalHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    padding: 16,
+    borderBottomWidth: 1,
+    borderBottomColor: 'rgba(255, 255, 255, 0.1)',
+  },
+  receiptModalTitle: {
+    fontSize: 18,
+    fontWeight: '700',
+    color: '#ffffff',
+  },
+  receiptModalCloseButton: {
+    padding: 4,
+  },
+  receiptModalImage: {
+    width: '100%',
+    height: '100%',
+    resizeMode: 'contain',
   },
 });
 

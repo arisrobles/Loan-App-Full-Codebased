@@ -18,6 +18,13 @@ import LocationPopup from "../../src/components/LocationPopup";
 
 export default function LoanDetails() {
   const router = useRouter();
+  
+  // Redirect to wizard for multi-step application
+  React.useEffect(() => {
+    router.replace("/(tabs)/loan_application_wizard");
+  }, []);
+  
+  return null;
   const [loanAmount, setLoanAmount] = useState(13800);
   const [tenor, setTenor] = useState(6);
   const [loading, setLoading] = useState(false);
@@ -106,14 +113,36 @@ export default function LoanDetails() {
       
       console.log('📤 Sending loan application:', requestData);
       
-      await api.post("/loans", requestData);
+      const response = await api.post("/loans", requestData);
 
-      Alert.alert("✅ Success", "Loan application submitted successfully!", [
-        {
-          text: "OK",
-          onPress: () => router.replace("/(tabs)"),
-        },
-      ]);
+      // Navigate to application details screen to complete legal documents
+      if (response.data?.data?.id) {
+        Alert.alert(
+          "✅ Success",
+          "Loan application submitted! Please complete your information to generate the legal agreement.",
+          [
+            {
+              text: "Complete Details",
+              onPress: () => router.push({
+                pathname: "/(tabs)/loan_application_details",
+                params: { loanId: response.data.data.id },
+              }),
+            },
+            {
+              text: "Later",
+              style: "cancel",
+              onPress: () => router.replace("/(tabs)"),
+            },
+          ]
+        );
+      } else {
+        Alert.alert("✅ Success", "Loan application submitted successfully!", [
+          {
+            text: "OK",
+            onPress: () => router.replace("/(tabs)"),
+          },
+        ]);
+      }
       } catch (err: any) {
         console.error("Loan submission error:", err);
         const errorData = err.response?.data;

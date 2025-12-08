@@ -12,6 +12,7 @@ import notificationRoutes from './routes/notification.routes';
 import paymentRoutes from './routes/payment.routes';
 import userRoutes from './routes/user.routes';
 import supportRoutes from './routes/support.routes';
+import legalRoutes from './routes/legal.routes';
 import { initializeSocket } from './socket/socket.server';
 
 dotenv.config();
@@ -41,7 +42,10 @@ app.use(express.json({ limit: '10mb' }));
 app.use(express.urlencoded({ extended: true, limit: '10mb' }));
 
 // Serve uploaded files
+// Serve base uploads directory
 app.use('/uploads', express.static('uploads'));
+// Serve loan-documents subdirectory
+app.use('/uploads/loan-documents', express.static('uploads/loan-documents'));
 
 // Health check
 app.get('/health', (_req, res) => {
@@ -58,6 +62,7 @@ app.use(`/api/${API_VERSION}/credit`, creditRoutes);
 app.use(`/api/${API_VERSION}/users`, userRoutes);
 app.use(`/api/${API_VERSION}/notifications`, notificationRoutes);
 app.use(`/api/${API_VERSION}/support`, supportRoutes);
+app.use(`/api/${API_VERSION}/legal`, legalRoutes);
 
 // Error handling middleware (must be last)
 app.use(errorHandler);

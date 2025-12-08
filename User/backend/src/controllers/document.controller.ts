@@ -22,10 +22,21 @@ export const uploadDocument = async (req: AuthRequest, res: Response, next: Next
       throw new AppError('User not authenticated', 401);
     }
 
+    console.log('📤 Document upload request:', {
+      borrowerId: req.borrowerId,
+      hasFile: !!req.file,
+      body: req.body,
+      fileInfo: req.file ? {
+        originalname: req.file.originalname,
+        mimetype: req.file.mimetype,
+        size: req.file.size,
+      } : null,
+    });
+
     if (!req.file) {
       return res.status(400).json({
         success: false,
-        message: 'No file uploaded',
+        message: 'No file uploaded. Please select a file and try again.',
       });
     }
 
@@ -73,7 +84,8 @@ export const uploadDocument = async (req: AuthRequest, res: Response, next: Next
       });
     }
 
-    const fileUrl = getFileUrl(req.file.filename);
+    // Generate file URL with borrower ID for proper organization
+    const fileUrl = getFileUrl(req.file.filename, req.borrowerId);
 
     // Store document metadata in database
     const document = await prisma.document.create({

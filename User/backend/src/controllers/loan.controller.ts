@@ -90,6 +90,30 @@ export const createLoan = async (req: AuthRequest, res: Response, next: NextFunc
       });
     }
 
+    // Note: Documents are not required at loan creation time
+    // Documents will be uploaded during final application submission
+    // This allows multi-step application flow where documents are uploaded at the end
+
+    // Validate borrower has required information
+    const borrower = await prisma.borrower.findUnique({
+      where: { id: BigInt(req.borrowerId) },
+      select: {
+        address: true,
+        civilStatus: true,
+      },
+    });
+
+    if (!borrower?.address || !borrower?.civilStatus) {
+      return res.status(400).json({
+        success: false,
+        message: 'Borrower information incomplete. Please complete your profile with address and civil status before submitting your loan application.',
+        missingFields: {
+          address: !borrower?.address,
+          civilStatus: !borrower?.civilStatus,
+        },
+      });
+    }
+
     // Validate request data
     console.log('🔍 Validating request data...');
     const validatedData = createLoanSchema.parse(req.body);
@@ -174,7 +198,6 @@ export const createLoan = async (req: AuthRequest, res: Response, next: NextFunc
 
     // Create notification for borrower
     try {
-      // @ts-expect-error - Prisma Client needs regeneration
       await prisma.notification.create({
         data: {
           borrowerId: BigInt(req.borrowerId),
@@ -381,7 +404,6 @@ export const cancelLoan = async (req: AuthRequest, res: Response, next: NextFunc
     const cancelledLoan = await prisma.loan.update({
       where: { id: loan.id },
       data: {
-        // @ts-expect-error - Prisma Client needs regeneration after adding 'cancelled' status to enum
         status: 'cancelled',
         isActive: false,
       },
