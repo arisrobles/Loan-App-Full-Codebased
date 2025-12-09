@@ -168,7 +168,6 @@ export default function LoanApplicationWizard() {
   const [loanId, setLoanId] = useState<string | null>(null);
   const [showTermsModal, setShowTermsModal] = useState(false);
   const [termsAccepted, setTermsAccepted] = useState(false);
-  const [showSuccessModal, setShowSuccessModal] = useState(false);
   const [finalAgreementUrl, setFinalAgreementUrl] = useState<string | null>(null);
   const [finalGuarantyUrl, setFinalGuarantyUrl] = useState<string | null>(null);
   // finalDemandLetterUrl removed - demand letters not generated during application
@@ -2767,8 +2766,17 @@ export default function LoanApplicationWizard() {
               // They will be generated on-demand from the loan details page when needed
 
               // Step 4: Application is complete!
-              // Show success modal instead of alert
-              setShowSuccessModal(true);
+              // Navigate to success screen
+              router.push({
+                pathname: "/(tabs)/loan_application_success",
+                params: {
+                  loanId: createdLoanId.toString(),
+                  loanAmount: loanAmount.toString(),
+                  tenor: tenor.toString(),
+                  agreementUrl: finalAgreementUrl || "",
+                  guarantyUrl: finalGuarantyUrl || "",
+                },
+              });
             } catch (error: any) {
               console.error("❌ Error during final submission:", error);
               const errorMessage = error.response?.data?.message || error.message || "Failed to submit application";
@@ -2957,150 +2965,6 @@ export default function LoanApplicationWizard() {
     }
   };
 
-  // Success Modal
-  const renderSuccessModal = () => (
-    <Modal
-      visible={showSuccessModal}
-      transparent={true}
-      animationType="fade"
-      onRequestClose={() => {
-        setShowSuccessModal(false);
-        router.replace("/(tabs)");
-      }}
-    >
-      <View style={styles.successModalOverlay}>
-        <View style={styles.successModalContent}>
-          {/* Success Icon */}
-          <View style={styles.successIconContainer}>
-            <View style={styles.successIconCircle}>
-              <Ionicons name="checkmark-circle" size={80} color="#4EFA8A" />
-            </View>
-          </View>
-
-          {/* Success Title */}
-          <Text style={styles.successTitle}>Application Submitted Successfully!</Text>
-
-          {/* Success Message */}
-          <Text style={styles.successMessage}>
-            Your loan application has been received and is now being processed. We will review your application and notify you of the status soon.
-          </Text>
-
-          {/* Scrollable Content */}
-          <ScrollView
-            style={styles.successModalScrollView}
-            contentContainerStyle={styles.successModalScrollContent}
-            showsVerticalScrollIndicator={true}
-            nestedScrollEnabled={true}
-          >
-            {/* Loan Details Card - Always show loan amount and term, show ID if available */}
-            <View style={styles.successDetailsCard}>
-              {loanId && (
-                <View style={styles.successDetailRow}>
-                  <Ionicons name="document-text-outline" size={20} color="#4EFA8A" />
-                  <Text style={styles.successDetailLabel}>Application ID:</Text>
-                  <Text style={styles.successDetailValue}>{loanId}</Text>
-                </View>
-              )}
-              <View style={styles.successDetailRow}>
-                <Ionicons name="cash-outline" size={20} color="#4EFA8A" />
-                <Text style={styles.successDetailLabel}>Loan Amount:</Text>
-                <Text style={styles.successDetailValue}>
-                  ₱{loanAmount.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-                </Text>
-              </View>
-              <View style={styles.successDetailRow}>
-                <Ionicons name="calendar-outline" size={20} color="#4EFA8A" />
-                <Text style={styles.successDetailLabel}>Payment Term:</Text>
-                <Text style={styles.successDetailValue}>{tenor} {tenor === 1 ? "month" : "months"}</Text>
-              </View>
-            </View>
-
-            {/* Download Documents Section */}
-            {(finalAgreementUrl || finalGuarantyUrl) && (
-              <View style={styles.successDownloadsSection}>
-                <Text style={styles.successDownloadsTitle}>Download Documents</Text>
-                <Text style={styles.successDownloadsSubtitle}>
-                  Save copies of your loan documents for your records
-                </Text>
-                
-                {/* Loan Agreement Download */}
-                {finalAgreementUrl && (
-                  <TouchableOpacity
-                    style={styles.successDownloadButton}
-                    onPress={() => handleDownloadDocument(finalAgreementUrl, "Loan Agreement")}
-                    disabled={downloadingDoc === "agreement"}
-                  >
-                    {downloadingDoc === "agreement" ? (
-                      <ActivityIndicator size="small" color="#4EFA8A" />
-                    ) : (
-                      <Ionicons name="download-outline" size={20} color="#4EFA8A" />
-                    )}
-                    <Text style={styles.successDownloadButtonText}>Loan Agreement</Text>
-                    <Ionicons name="document-text-outline" size={18} color="#9CA3AF" />
-                  </TouchableOpacity>
-                )}
-
-                {/* Guaranty Agreement Download */}
-                {finalGuarantyUrl && (
-                  <TouchableOpacity
-                    style={styles.successDownloadButton}
-                    onPress={() => handleDownloadDocument(finalGuarantyUrl, "Guaranty Agreement")}
-                    disabled={downloadingDoc === "guaranty"}
-                  >
-                    {downloadingDoc === "guaranty" ? (
-                      <ActivityIndicator size="small" color="#4EFA8A" />
-                    ) : (
-                      <Ionicons name="download-outline" size={20} color="#4EFA8A" />
-                    )}
-                    <Text style={styles.successDownloadButtonText}>Guaranty Agreement</Text>
-                    <Ionicons name="document-text-outline" size={18} color="#9CA3AF" />
-                  </TouchableOpacity>
-                )}
-
-                {/* Demand Letter removed - only generated for overdue payments */}
-              </View>
-            )}
-
-            {/* Next Steps */}
-            <View style={styles.successNextSteps}>
-              <Text style={styles.successNextStepsTitle}>What&apos;s Next?</Text>
-              <View style={styles.successNextStepItem}>
-                <Ionicons name="checkmark-circle" size={16} color="#4EFA8A" />
-                <Text style={styles.successNextStepText}>Application submitted and documents uploaded</Text>
-              </View>
-              <View style={styles.successNextStepItem}>
-                <Ionicons name="time-outline" size={16} color="#9CA3AF" />
-                <Text style={styles.successNextStepText}>Awaiting lender review and approval</Text>
-              </View>
-              <View style={styles.successNextStepItem}>
-                <Ionicons name="notifications-outline" size={16} color="#9CA3AF" />
-                <Text style={styles.successNextStepText}>You will receive a notification once reviewed</Text>
-              </View>
-            </View>
-          </ScrollView>
-
-          {/* Action Button - Fixed at bottom */}
-          <TouchableOpacity
-            style={styles.successButton}
-            onPress={() => {
-              setShowSuccessModal(false);
-              router.replace("/(tabs)");
-            }}
-          >
-            <LinearGradient
-              colors={["#4EFA8A", "#30D158"]}
-              start={{ x: 0, y: 0 }}
-              end={{ x: 1, y: 1 }}
-              style={styles.successButtonGradient}
-            >
-              <Ionicons name="checkmark-circle" size={20} color="#03042c" />
-              <Text style={styles.successButtonText}>View My Loans</Text>
-            </LinearGradient>
-          </TouchableOpacity>
-        </View>
-      </View>
-    </Modal>
-  );
 
   // Terms and Conditions Modal
   const renderTermsModal = () => (
@@ -3759,9 +3623,6 @@ export default function LoanApplicationWizard() {
 
       {/* Terms and Conditions Modal */}
       {renderTermsModal()}
-
-      {/* Success Modal */}
-      {renderSuccessModal()}
 
       {/* Document Viewer Modal */}
       <Modal
@@ -4657,174 +4518,6 @@ const styles = StyleSheet.create({
   },
   termsButtonTextDisabled: {
     color: "#9CA3AF",
-  },
-  successModalOverlay: {
-    flex: 1,
-    backgroundColor: "rgba(0, 0, 0, 0.85)",
-    justifyContent: "center",
-    alignItems: "center",
-    padding: 20,
-  },
-  successModalContent: {
-    width: "100%",
-    maxWidth: 400,
-    backgroundColor: "#1e1e2f",
-    borderRadius: 20,
-    borderWidth: 1,
-    borderColor: "#374151",
-    padding: 24,
-    alignItems: "center",
-    shadowColor: "#000",
-    shadowOffset: {
-      width: 0,
-      height: 10,
-    },
-    shadowOpacity: 0.3,
-    shadowRadius: 20,
-    elevation: 10,
-    maxHeight: "90%",
-  },
-  successModalScrollView: {
-    width: "100%",
-    maxHeight: 280,
-    marginTop: 8,
-  },
-  successModalScrollContent: {
-    paddingBottom: 20,
-    alignItems: "center",
-    width: "100%",
-  },
-  successIconContainer: {
-    marginBottom: 20,
-  },
-  successIconCircle: {
-    width: 120,
-    height: 120,
-    borderRadius: 60,
-    backgroundColor: "rgba(78, 250, 138, 0.1)",
-    justifyContent: "center",
-    alignItems: "center",
-    borderWidth: 3,
-    borderColor: "#4EFA8A",
-  },
-  successTitle: {
-    fontSize: 24,
-    fontWeight: "700",
-    color: "#fff",
-    textAlign: "center",
-    marginBottom: 12,
-    letterSpacing: 0.5,
-  },
-  successMessage: {
-    fontSize: 15,
-    color: "#E5E7EB",
-    textAlign: "center",
-    lineHeight: 22,
-    marginBottom: 24,
-    paddingHorizontal: 8,
-  },
-  successDetailsCard: {
-    width: "100%",
-    backgroundColor: "#2a2a3e",
-    borderRadius: 12,
-    padding: 16,
-    marginBottom: 20,
-    borderWidth: 1,
-    borderColor: "#374151",
-  },
-  successDetailRow: {
-    flexDirection: "row",
-    alignItems: "center",
-    marginBottom: 12,
-    gap: 10,
-  },
-  successDetailLabel: {
-    fontSize: 14,
-    color: "#9CA3AF",
-    fontWeight: "500",
-    flex: 1,
-  },
-  successDetailValue: {
-    fontSize: 14,
-    color: "#fff",
-    fontWeight: "600",
-  },
-  successNextSteps: {
-    width: "100%",
-    marginBottom: 24,
-  },
-  successNextStepsTitle: {
-    fontSize: 16,
-    fontWeight: "700",
-    color: "#4EFA8A",
-    marginBottom: 12,
-  },
-  successNextStepItem: {
-    flexDirection: "row",
-    alignItems: "flex-start",
-    marginBottom: 10,
-    gap: 10,
-  },
-  successNextStepText: {
-    flex: 1,
-    fontSize: 13,
-    color: "#E5E7EB",
-    lineHeight: 20,
-  },
-  successButton: {
-    width: "100%",
-    borderRadius: 12,
-    overflow: "hidden",
-    marginTop: 16,
-  },
-  successButtonGradient: {
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "center",
-    gap: 8,
-    paddingVertical: 16,
-    paddingHorizontal: 24,
-  },
-  successButtonText: {
-    color: "#03042c",
-    fontSize: 16,
-    fontWeight: "700",
-    letterSpacing: 0.3,
-  },
-  successDownloadsSection: {
-    width: "100%",
-    marginBottom: 20,
-  },
-  successDownloadsTitle: {
-    fontSize: 16,
-    fontWeight: "700",
-    color: "#4EFA8A",
-    marginBottom: 6,
-  },
-  successDownloadsSubtitle: {
-    fontSize: 12,
-    color: "#9CA3AF",
-    marginBottom: 16,
-    lineHeight: 18,
-  },
-  successDownloadButton: {
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "space-between",
-    backgroundColor: "#2a2a3e",
-    borderRadius: 10,
-    padding: 14,
-    marginBottom: 10,
-    borderWidth: 1,
-    borderColor: "#374151",
-    gap: 12,
-  },
-  successDownloadButtonText: {
-    flex: 1,
-    fontSize: 14,
-    color: "#fff",
-    fontWeight: "600",
-    marginLeft: 8,
   },
   savedDataBanner: {
     backgroundColor: "rgba(78, 250, 138, 0.1)",
