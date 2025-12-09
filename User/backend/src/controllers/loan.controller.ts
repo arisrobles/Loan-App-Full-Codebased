@@ -12,15 +12,16 @@ const createLoanSchema = z.object({
   principalAmount: z.number().min(3500).max(50000).optional(),
   tenor: z.preprocess(
     (val) => {
-      // Accept both string and number, convert to string first
-      if (typeof val === 'number') {
-        return val.toString();
+      // Accept both string and number, convert to number
+      if (typeof val === 'string') {
+        return parseInt(val, 10);
       }
       return val;
     },
-    z.enum(['6', '12', '36'], {
-      errorMap: () => ({ message: 'Tenor must be 6, 12, or 36 months' }),
-    }).transform(Number)
+    z.number().int().min(1).max(18).refine(
+      (val) => val >= 1 && val <= 18,
+      { message: 'Tenor must be between 1 and 18 months' }
+    )
   ),
   interestRate: z.number().optional(),
 }).refine((data) => data.amount || data.principalAmount, {

@@ -99,7 +99,7 @@ class DocumentController extends Controller
         $validated = $request->validate([
             'borrower_id' => ['required', 'exists:borrowers,id'],
             'loan_id' => ['nullable', 'exists:loans,id'],
-            'document_type' => ['required', 'in:PRIMARY_ID,SECONDARY_ID,AGREEMENT,RECEIPT,OTHER'],
+            'document_type' => ['required', 'in:PRIMARY_ID,SECONDARY_ID,AGREEMENT,RECEIPT,SIGNATURE,PHOTO_2X2,OTHER'],
             'file' => ['required', 'file', 'mimes:jpg,jpeg,png,pdf', 'max:5120'], // 5MB
         ]);
 

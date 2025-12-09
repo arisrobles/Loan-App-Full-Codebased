@@ -338,6 +338,8 @@ enum DocumentType {
   SECONDARY_ID
   AGREEMENT
   RECEIPT
+  SIGNATURE
+  PHOTO_2X2
   OTHER
 }
 

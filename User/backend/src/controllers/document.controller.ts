@@ -12,7 +12,7 @@ const prisma = new PrismaClient();
 // For now, this is a placeholder that you can adapt
 
 const uploadDocumentSchema = z.object({
-  documentType: z.enum(['PRIMARY_ID', 'SECONDARY_ID', 'AGREEMENT', 'RECEIPT', 'OTHER']),
+  documentType: z.enum(['PRIMARY_ID', 'SECONDARY_ID', 'AGREEMENT', 'RECEIPT', 'SIGNATURE', 'PHOTO_2X2', 'OTHER']),
   loanId: z.string().optional(),
 });
 
@@ -92,7 +92,7 @@ export const uploadDocument = async (req: AuthRequest, res: Response, next: Next
       data: {
         borrowerId: BigInt(req.borrowerId),
         loanId: loanId ? BigInt(loanId) : null,
-        documentType,
+        documentType: documentType as any, // Cast to any or DocumentType to fix TS error
         fileName: req.file.originalname,
         fileUrl,
         fileSize: BigInt(req.file.size),

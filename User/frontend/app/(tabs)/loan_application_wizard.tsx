@@ -12,7 +12,7 @@ import {
   TextInput,
   BackHandler,
   Modal,
-  Linking,
+  Dimensions,
 } from "react-native";
 import Slider from "@react-native-community/slider";
 import { Card } from "react-native-paper";
@@ -24,6 +24,14 @@ import LocationPopup from "../../src/components/LocationPopup";
 import { StatusBar } from "expo-status-bar";
 import { WebView } from "react-native-webview";
 import AsyncStorage from "@react-native-async-storage/async-storage";
+import {
+  LOAN_CONFIG,
+  calculateEMI,
+  isValidTenor,
+  isValidLoanAmount,
+  getInterestRateDecimal,
+  getInterestRatePercent,
+} from "../../src/config/loanConfig";
 
 type Step = 1 | 2 | 3 | 4 | 5;
 
@@ -129,6 +137,8 @@ export default function LoanApplicationWizard() {
   const [primaryIdBack, setPrimaryIdBack] = useState<DocumentFile | null>(null);
   const [secondaryIdFront, setSecondaryIdFront] = useState<DocumentFile | null>(null);
   const [secondaryIdBack, setSecondaryIdBack] = useState<DocumentFile | null>(null);
+  const [signature, setSignature] = useState<DocumentFile | null>(null);
+  const [photo2x2, setPhoto2x2] = useState<DocumentFile | null>(null);
   
   // Step 3: Borrower Details
   const [borrowerDetails, setBorrowerDetails] = useState<BorrowerDetails>({
@@ -171,7 +181,6 @@ export default function LoanApplicationWizard() {
   const [finalAgreementUrl, setFinalAgreementUrl] = useState<string | null>(null);
   const [finalGuarantyUrl, setFinalGuarantyUrl] = useState<string | null>(null);
   // finalDemandLetterUrl removed - demand letters not generated during application
-  const [downloadingDoc, setDownloadingDoc] = useState<string | null>(null);
 
   // Document viewing
   const [viewingDocument, setViewingDocument] = useState<{
@@ -193,7 +202,8 @@ export default function LoanApplicationWizard() {
   // Field error states - track which fields have errors
   const [fieldErrors, setFieldErrors] = useState<Set<string>>(new Set());
 
-  const interestRate = 24; // Annual %
+  // Get interest rate from config
+  const interestRate = getInterestRatePercent(); // Annual %
 
   // Storage keys
   const STORAGE_KEYS = {
@@ -477,16 +487,10 @@ export default function LoanApplicationWizard() {
       currency: "PHP",
     }).format(value);
 
-  // Calculate EMI
-  const monthlyInterest = interestRate / 12 / 100;
-  const emi = useMemo(() => {
-    if (monthlyInterest === 0) {
-      return (loanAmount / tenor).toFixed(2);
-    }
-    const numerator = loanAmount * monthlyInterest * Math.pow(1 + monthlyInterest, tenor);
-    const denominator = Math.pow(1 + monthlyInterest, tenor) - 1;
-    return (numerator / denominator).toFixed(2);
-  }, [loanAmount, tenor, monthlyInterest]);
+  // Calculate EMI using centralized function (returns number)
+  const emiValue = useMemo(() => {
+    return calculateEMI(loanAmount, tenor);
+  }, [loanAmount, tenor]);
 
   // Check if step is complete
   // Step 1: Loan Details
@@ -529,8 +533,8 @@ export default function LoanApplicationWizard() {
         <Text style={styles.amount}>{formatCurrency(loanAmount)}</Text>
         <Slider
           style={{ width: "100%" }}
-          minimumValue={3500}
-          maximumValue={50000}
+          minimumValue={LOAN_CONFIG.AMOUNT.MIN}
+          maximumValue={LOAN_CONFIG.AMOUNT.MAX}
           step={100}
           minimumTrackTintColor="#f97316"
           maximumTrackTintColor="#ddd"
@@ -539,39 +543,52 @@ export default function LoanApplicationWizard() {
           onValueChange={setLoanAmount}
         />
         <View style={styles.rangeRow}>
-          <Text style={styles.rangeText}>{formatCurrency(3500)}</Text>
-          <Text style={styles.rangeText}>{formatCurrency(50000)}</Text>
+          <Text style={styles.rangeText}>{formatCurrency(LOAN_CONFIG.AMOUNT.MIN)}</Text>
+          <Text style={styles.rangeText}>{formatCurrency(LOAN_CONFIG.AMOUNT.MAX)}</Text>
         </View>
       </Card>
 
-      <Text style={styles.label}>Choose your tenor</Text>
-      <View style={styles.tenorRow}>
-        {[6, 12, 36].map((item) => (
-          <TouchableOpacity
-            key={item}
-            style={[styles.tenorBox, tenor === item && styles.activeTenor]}
-            onPress={() => setTenor(item)}
-          >
-            <Text
+      <Text style={styles.label}>Choose your tenor (1-18 months)</Text>
+      <ScrollView 
+        showsVerticalScrollIndicator={false}
+        contentContainerStyle={styles.tenorScrollContainer}
+      >
+        <View style={styles.tenorGrid}>
+          {LOAN_CONFIG.TENOR.OPTIONS.map((item, index) => {
+            // Remove right margin for every 6th item (end of row)
+            const isLastInRow = (index + 1) % 6 === 0;
+            return (
+            <TouchableOpacity
+              key={item}
               style={[
-                styles.tenorText,
-                tenor === item && styles.activeTenorText,
+                styles.tenorBox, 
+                tenor === item && styles.activeTenor,
+                isLastInRow && styles.tenorBoxLastInRow
               ]}
+              onPress={() => setTenor(item)}
             >
-              {item} month
-            </Text>
-          </TouchableOpacity>
-        ))}
-      </View>
+              <Text
+                style={[
+                  styles.tenorText,
+                  tenor === item && styles.activeTenorText,
+                ]}
+              >
+                {item}
+              </Text>
+            </TouchableOpacity>
+          );
+        })}
+        </View>
+      </ScrollView>
 
       <Card style={styles.card}>
         <Text style={styles.detailText}>EMI Tenure: {tenor} months</Text>
         <Text style={styles.detailText}>Annual Interest Rate: {interestRate}%</Text>
         <Text style={styles.detailText}>
-          Monthly EMI: {formatCurrency(parseFloat(emi))}
+          Monthly EMI: {formatCurrency(emiValue)}
         </Text>
         <Text style={styles.detailText}>
-          Total Amount Payable: {formatCurrency(parseFloat(emi) * tenor)}
+          Total Amount Payable: {formatCurrency(emiValue * tenor)}
         </Text>
       </Card>
 
@@ -658,8 +675,8 @@ export default function LoanApplicationWizard() {
 
   // Upload documents (called during final submission - ONLY when Submit button is clicked)
   const uploadDocuments = async (loanIdParam: string): Promise<boolean> => {
-    if (!primaryIdFront || !primaryIdBack || !secondaryIdFront || !secondaryIdBack) {
-      Alert.alert("Missing Documents", "Please upload both front and back of Primary ID and Secondary ID");
+    if (!primaryIdFront || !primaryIdBack || !secondaryIdFront || !secondaryIdBack || !signature || !photo2x2) {
+      Alert.alert("Missing Documents", "Please upload all required documents: Primary ID (front & back), Secondary ID (front & back), Signature, and 2x2 Photo");
       return false;
     }
 
@@ -734,6 +751,39 @@ export default function LoanApplicationWizard() {
         headers: { 'Content-Type': 'multipart/form-data' },
         timeout: 60000,
       });
+
+      // Upload Signature
+      const signatureFormData = new FormData();
+      signatureFormData.append("file", {
+        uri: signature.uri,
+        name: signature.name || "signature.pdf",
+        type: signature.type || "application/pdf",
+      } as any);
+      signatureFormData.append("documentType", "SIGNATURE");
+      signatureFormData.append("loanId", loanIdParam);
+
+      console.log("📤 Uploading Signature...");
+      await api.post("/documents/upload", signatureFormData, {
+        headers: { 'Content-Type': 'multipart/form-data' },
+        timeout: 60000,
+      });
+
+      // Upload 2x2 Photo
+      const photo2x2FormData = new FormData();
+      photo2x2FormData.append("file", {
+        uri: photo2x2.uri,
+        name: photo2x2.name || "photo_2x2.jpg",
+        type: photo2x2.type || "image/jpeg",
+      } as any);
+      photo2x2FormData.append("documentType", "PHOTO_2X2");
+      photo2x2FormData.append("loanId", loanIdParam);
+
+      console.log("📤 Uploading 2x2 Photo...");
+      await api.post("/documents/upload", photo2x2FormData, {
+        headers: { 'Content-Type': 'multipart/form-data' },
+        timeout: 60000,
+      });
+
       console.log("✅ All documents uploaded successfully");
 
       return true;
@@ -895,6 +945,7 @@ export default function LoanApplicationWizard() {
           </View>
         </View>
       </Card>
+
     </View>
   );
 
@@ -2297,6 +2348,88 @@ export default function LoanApplicationWizard() {
             </View>
           )}
         </Card>
+
+        {/* 6. Signature & Photo */}
+        <Card style={styles.card}>
+          <View style={styles.sectionHeader}>
+            <Ionicons name="document-attach-outline" size={20} color="#4EFA8A" />
+            <Text style={styles.sectionTitle}>Signature & Photo</Text>
+          </View>
+
+          {/* Signature */}
+          <View style={styles.inputGroup}>
+            <View style={styles.labelRow}>
+              <Ionicons name="create-outline" size={16} color="#9CA3AF" />
+              <Text style={styles.label}>Signature *</Text>
+            </View>
+            <Text style={styles.helperText}>
+              Upload a clear image of your signature (JPG, PNG, or PDF)
+            </Text>
+            <View style={styles.uploadSingle}>
+              <TouchableOpacity
+                style={[styles.uploadButton, signature && styles.uploadButtonSuccess]}
+                onPress={() => handlePickDocument(setSignature)}
+              >
+                <Ionicons
+                  name={signature ? "checkmark-circle" : "create-outline"}
+                  size={24}
+                  color={signature ? "#4EFA8A" : "#fff"}
+                />
+                <Text style={styles.uploadButtonText}>
+                  {signature ? signature.name : "Upload Signature"}
+                </Text>
+              </TouchableOpacity>
+              {signature && (
+                <TouchableOpacity
+                  style={styles.removeButton}
+                  onPress={() => setSignature(null)}
+                >
+                  <Text style={styles.removeButtonText}>Remove</Text>
+                </TouchableOpacity>
+              )}
+            </View>
+            {fieldErrors.has("signature") && (
+              <Text style={styles.errorText}>Signature is required</Text>
+            )}
+          </View>
+
+          {/* 2x2 Photo */}
+          <View style={styles.inputGroup}>
+            <View style={styles.labelRow}>
+              <Ionicons name="camera-outline" size={16} color="#9CA3AF" />
+              <Text style={styles.label}>2x2 Photo *</Text>
+            </View>
+            <Text style={styles.helperText}>
+              Upload a recent 2x2 ID photo (JPG or PNG, max 5MB)
+            </Text>
+            <View style={styles.uploadSingle}>
+              <TouchableOpacity
+                style={[styles.uploadButton, photo2x2 && styles.uploadButtonSuccess]}
+                onPress={() => handlePickDocument(setPhoto2x2)}
+              >
+                <Ionicons
+                  name={photo2x2 ? "checkmark-circle" : "camera-outline"}
+                  size={24}
+                  color={photo2x2 ? "#4EFA8A" : "#fff"}
+                />
+                <Text style={styles.uploadButtonText}>
+                  {photo2x2 ? photo2x2.name : "Upload 2x2 Photo"}
+                </Text>
+              </TouchableOpacity>
+              {photo2x2 && (
+                <TouchableOpacity
+                  style={styles.removeButton}
+                  onPress={() => setPhoto2x2(null)}
+                >
+                  <Text style={styles.removeButtonText}>Remove</Text>
+                </TouchableOpacity>
+              )}
+            </View>
+            {fieldErrors.has("photo2x2") && (
+              <Text style={styles.errorText}>2x2 Photo is required</Text>
+            )}
+          </View>
+        </Card>
       </View>
     );
   };
@@ -2327,7 +2460,7 @@ export default function LoanApplicationWizard() {
       const agreementRes = await api.post("/legal/agreement/preview", {
         loanAmount,
         tenor,
-        interestRate: interestRate / 100, // Convert to decimal
+        interestRate: getInterestRateDecimal(), // Get from config as decimal
         borrower: {
           fullName: borrowerDetails.fullName,
           address: borrowerDetails.address,
@@ -2631,10 +2764,10 @@ export default function LoanApplicationWizard() {
     }
 
     // Validate documents are selected
-    if (!primaryIdFront || !primaryIdBack || !secondaryIdFront || !secondaryIdBack) {
+    if (!primaryIdFront || !primaryIdBack || !secondaryIdFront || !secondaryIdBack || !signature || !photo2x2) {
       Alert.alert(
         "Missing Documents",
-        "Please go back to Step 2 and upload both front and back of your Primary ID and Secondary ID documents.",
+        "Please go back to Step 2 and Step 3 to upload all required documents: Primary ID (front & back), Secondary ID (front & back), Signature, and 2x2 Photo.",
         [
           {
             text: "Go to Documents",
@@ -2692,7 +2825,7 @@ export default function LoanApplicationWizard() {
                 amount: loanAmount,
                 principalAmount: loanAmount,
                 tenor: tenor.toString(),
-                interestRate: interestRate / 100,
+                interestRate: getInterestRateDecimal(), // Get from config as decimal
               };
 
               if (location) {
@@ -2768,7 +2901,7 @@ export default function LoanApplicationWizard() {
               // Step 4: Application is complete!
               // Navigate to success screen
               router.push({
-                pathname: "/(tabs)/loan_application_success",
+                pathname: "/(tabs)/loan_application_success" as any,
                 params: {
                   loanId: createdLoanId.toString(),
                   loanAmount: loanAmount.toString(),
@@ -2801,7 +2934,7 @@ export default function LoanApplicationWizard() {
         <Text style={styles.reviewTitle}>Loan Details</Text>
         <Text style={styles.reviewText}>Amount: {formatCurrency(loanAmount)}</Text>
         <Text style={styles.reviewText}>Tenor: {tenor} months</Text>
-        <Text style={styles.reviewText}>Monthly EMI: {formatCurrency(parseFloat(emi))}</Text>
+        <Text style={styles.reviewText}>Monthly EMI: {formatCurrency(emiValue)}</Text>
       </Card>
 
       <Card style={styles.card}>
@@ -2929,42 +3062,6 @@ export default function LoanApplicationWizard() {
       </TouchableOpacity>
     </View>
   );
-
-  // Download document handler
-  const handleDownloadDocument = async (url: string, documentName: string) => {
-    try {
-      const docType = documentName.toLowerCase().includes("loan agreement") 
-        ? "agreement" 
-        : documentName.toLowerCase().includes("guaranty") 
-        ? "guaranty" 
-        : "demand";
-      
-      setDownloadingDoc(docType);
-      
-      // Open URL directly - browser/device will handle download
-      const canOpen = await Linking.canOpenURL(url);
-      if (canOpen) {
-        await Linking.openURL(url);
-        Alert.alert(
-          "Opening Document",
-          `${documentName} is opening in your browser. You can download it from there.`,
-          [{ text: "OK" }]
-        );
-      } else {
-        throw new Error("Cannot open URL");
-      }
-    } catch (error: any) {
-      console.error("Error opening document:", error);
-      Alert.alert(
-        "Download Error",
-        `Failed to open ${documentName}. Please check your internet connection and try again.`,
-        [{ text: "OK" }]
-      );
-    } finally {
-      setDownloadingDoc(null);
-    }
-  };
-
 
   // Terms and Conditions Modal
   const renderTermsModal = () => (
@@ -3189,11 +3286,11 @@ export default function LoanApplicationWizard() {
       case 1:
         const missingStep1: string[] = [];
         
-        if (loanAmount < 3500 || loanAmount > 50000) {
-          missingStep1.push("Loan Amount (must be between ₱3,500 and ₱50,000)");
+        if (!isValidLoanAmount(loanAmount)) {
+          missingStep1.push(`Loan Amount (must be between ₱${LOAN_CONFIG.AMOUNT.MIN.toLocaleString()} and ₱${LOAN_CONFIG.AMOUNT.MAX.toLocaleString()})`);
         }
-        if (tenor <= 0) {
-          missingStep1.push("Loan Term (Tenor)");
+        if (!isValidTenor(tenor)) {
+          missingStep1.push(`Loan Term (Tenor must be between ${LOAN_CONFIG.TENOR.MIN} and ${LOAN_CONFIG.TENOR.MAX} months)`);
         }
         if (!location) {
           missingStep1.push("Application Location");
@@ -3344,6 +3441,16 @@ export default function LoanApplicationWizard() {
           }
         }
 
+        // Validate Signature and Photo
+        if (!signature) {
+          errorFields.add("signature");
+          missingFields.push("Signature");
+        }
+        if (!photo2x2) {
+          errorFields.add("photo2x2");
+          missingFields.push("2x2 Photo");
+        }
+
         // Set error states and show alert
         if (missingFields.length > 0) {
           setFieldErrors(errorFields);
@@ -3400,6 +3507,7 @@ export default function LoanApplicationWizard() {
 
       case 4:
         // Step 4 validation is handled by isStepComplete
+        // No validation needed, proceed to next step
         break;
     }
 
@@ -3772,22 +3880,43 @@ const styles = StyleSheet.create({
     marginTop: 4,
   },
   rangeText: { fontSize: 12, color: "#aaa" },
-  tenorRow: {
+  tenorScrollContainer: {
+    paddingVertical: 8,
+  },
+  tenorGrid: {
     flexDirection: "row",
-    justifyContent: "space-between",
-    marginVertical: 12,
+    flexWrap: "wrap",
+    justifyContent: "flex-start",
+    width: "100%",
+    paddingHorizontal: 0,
   },
   tenorBox: {
-    flex: 1,
-    margin: 4,
-    padding: 12,
+    width: (Dimensions.get("window").width - 40) / 6 - 6.67, // Screen width minus padding (20 each side) divided by 6, minus margin space
+    marginRight: 8,
+    marginBottom: 8,
+    padding: 10,
     borderRadius: 10,
     backgroundColor: "#444",
     alignItems: "center",
+    justifyContent: "center",
+    aspectRatio: 1,
+  },
+  tenorBoxLastInRow: {
+    marginRight: 0, // Remove right margin for last item in each row
   },
   activeTenor: { backgroundColor: "#f97316" },
-  tenorText: { fontWeight: "600", color: "#ddd" },
+  tenorText: { 
+    fontWeight: "700", 
+    fontSize: 18,
+    color: "#ddd" 
+  },
   activeTenorText: { color: "#fff" },
+  tenorMonthText: {
+    fontSize: 10,
+    color: "#aaa",
+    marginTop: 2,
+  },
+  activeTenorMonthText: { color: "#fff" },
   detailText: { marginVertical: 4, fontSize: 14, color: "#fff" },
   locationHeader: {
     flexDirection: "row",
@@ -3877,6 +4006,10 @@ const styles = StyleSheet.create({
   },
   uploadColumn: {
     flex: 1,
+  },
+  uploadSingle: {
+    width: "100%",
+    marginTop: 12,
   },
   uploadLabel: {
     fontSize: 13,

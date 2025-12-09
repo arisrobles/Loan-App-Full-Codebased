@@ -283,6 +283,8 @@ document.addEventListener('DOMContentLoaded', function() {
           <option value="SECONDARY_ID">Secondary ID</option>
           <option value="AGREEMENT">Agreement</option>
           <option value="RECEIPT">Receipt</option>
+          <option value="SIGNATURE">Signature</option>
+          <option value="PHOTO_2X2">2x2 Photo</option>
           <option value="OTHER">Other</option>
         </select>
       </div>

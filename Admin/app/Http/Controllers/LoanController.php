@@ -188,7 +188,7 @@ class LoanController extends Controller
             'borrower_id' => ['required', 'exists:borrowers,id'],
             'principal_amount' => ['required', 'numeric', 'min:3500', 'max:50000'],
             'interest_rate' => ['nullable', 'numeric', 'min:0', 'max:100'],
-            'tenor' => ['required', 'in:6,12,36'],
+            'tenor' => ['required', 'integer', 'min:1', 'max:18'],
             'application_date' => ['required', 'date'],
             'penalty_grace_days' => ['nullable', 'integer', 'min:0'],
             'penalty_daily_rate' => ['nullable', 'numeric', 'min:0'],
