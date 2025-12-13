@@ -51,6 +51,9 @@ class Loan extends Model
         'penalty_daily_rate',
         'is_active',
         'remarks',
+        'application_latitude',
+        'application_longitude',
+        'application_location_address',
     ];
 
     protected $casts = [
@@ -65,6 +68,8 @@ class Loan extends Model
         'penalty_grace_days' => 'integer',
         'penalty_daily_rate' => 'decimal:6',
         'is_active'          => 'boolean',
+        'application_latitude' => 'decimal:8',
+        'application_longitude' => 'decimal:8',
     ];
 
     /*
@@ -86,6 +91,16 @@ class Loan extends Model
     public function payments()
     {
         return $this->hasMany(Payment::class, 'loan_id');
+    }
+
+    public function documents()
+    {
+        return $this->hasMany(Document::class, 'loan_id');
+    }
+
+    public function guarantor()
+    {
+        return $this->hasOne(Guarantor::class, 'loan_id');
     }
 
     /*

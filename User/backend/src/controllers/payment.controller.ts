@@ -1,4 +1,5 @@
 import { PrismaClient } from '@prisma/client';
+import { LoanStatus } from '../constants/loanStatus';
 import { NextFunction, Response } from 'express';
 import { z } from 'zod';
 import { AuthRequest } from '../middleware/auth.middleware';
@@ -43,7 +44,7 @@ export const createPayment = async (req: AuthRequest, res: Response, next: NextF
     }
 
     // Validate loan is disbursed (only disbursed loans can receive payments)
-    if (loan.status !== 'disbursed') {
+    if (loan.status !== LoanStatus.DISBURSED) {
       return res.status(400).json({
         success: false,
         message: `Cannot make payment. Loan status is "${loan.status}". Only disbursed loans can receive payments.`,
@@ -118,7 +119,7 @@ export const createPayment = async (req: AuthRequest, res: Response, next: NextF
         where: {
           repaymentId: repayment.id,
           borrowerId: BigInt(req.borrowerId),
-          status: 'approved',
+          status: LoanStatus.APPROVED,
         },
       });
 
@@ -189,7 +190,7 @@ export const createPayment = async (req: AuthRequest, res: Response, next: NextF
           where: {
             repaymentId: unpaidRepayment.id,
             borrowerId: BigInt(req.borrowerId),
-            status: 'approved',
+            status: LoanStatus.APPROVED,
           },
         });
 

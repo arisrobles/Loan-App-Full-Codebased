@@ -79,10 +79,21 @@ class LoanHelper
      *
      * @return string Loan reference
      */
+    /**
+     * Generate loan reference (MF-YYYY-XXXX format)
+     * Uses database locking to prevent race conditions
+     *
+     * @return string Loan reference
+     */
     public static function generateLoanReference(): string
     {
         $year = date('Y');
+        
+        // Use database transaction with locking to prevent race conditions
+        return \Illuminate\Support\Facades\DB::transaction(function () use ($year) {
+            // Lock the loans table to prevent concurrent reference generation
         $lastLoan = \App\Models\Loan::where('reference', 'like', "MF-{$year}-%")
+                ->lockForUpdate()
             ->orderBy('created_at', 'desc')
             ->first();
 
@@ -94,6 +105,7 @@ class LoanHelper
         }
 
         return sprintf('MF-%s-%04d', $year, $sequence);
+        });
     }
 
     /**

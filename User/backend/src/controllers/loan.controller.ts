@@ -4,6 +4,9 @@ import { z } from 'zod';
 import { AuthRequest } from '../middleware/auth.middleware';
 import { AppError } from '../middleware/errorHandler';
 import { calculateEMI, generatePaymentSchedule } from '../utils/loan.util';
+import { LoanStatus, isCancellableStatus, getLoanStatusDisplay } from '../constants/loanStatus';
+import { LoanDefaults } from '../constants/loanDefaults';
+import { sendErrorResponse, sendValidationError } from '../utils/errorResponse';
 
 const prisma = new PrismaClient();
 
@@ -24,34 +27,21 @@ const createLoanSchema = z.object({
     )
   ),
   interestRate: z.number().optional(),
+  applicationDate: z.string().optional(), // ISO date string (YYYY-MM-DD)
+  latitude: z.number().optional(),
+  longitude: z.number().optional(),
+  locationAddress: z.string().optional(),
+  guarantor: z.object({
+    fullName: z.string().min(1),
+    address: z.string().min(1),
+    civilStatus: z.string().optional(),
+  }).optional(),
 }).refine((data) => data.amount || data.principalAmount, {
   message: 'Either amount or principalAmount is required',
 });
 
-// Generate loan reference (MF-YYYY-XXXX format)
-const generateLoanReference = async (): Promise<string> => {
-  const year = new Date().getFullYear();
-  const lastLoan = await prisma.loan.findFirst({
-    where: {
-      reference: {
-        startsWith: `MF-${year}-`,
-      },
-    },
-    orderBy: {
-      createdAt: 'desc',
-    },
-  });
-
-  let sequence = 1;
-  if (lastLoan) {
-    const match = lastLoan.reference.match(/MF-\d{4}-(\d+)/);
-    if (match) {
-      sequence = parseInt(match[1]) + 1;
-    }
-  }
-
-  return `MF-${year}-${sequence.toString().padStart(4, '0')}`;
-};
+// Note: Loan reference generation is now done inside the loan creation transaction
+// to ensure atomicity and prevent race conditions
 
 export const createLoan = async (req: AuthRequest, res: Response, next: NextFunction) => {
   try {
@@ -70,25 +60,35 @@ export const createLoan = async (req: AuthRequest, res: Response, next: NextFunc
       where: {
         borrowerId: BigInt(req.borrowerId),
         status: {
-          in: ['new_application', 'under_review', 'approved', 'for_release', 'disbursed'],
+          in: [
+            LoanStatus.NEW_APPLICATION,
+            LoanStatus.UNDER_REVIEW,
+            LoanStatus.APPROVED,
+            LoanStatus.FOR_RELEASE,
+            LoanStatus.DISBURSED,
+          ],
         },
         isActive: true,
       },
     });
 
     if (existingPendingLoan) {
-      const statusDisplay = existingPendingLoan.status.replace(/_/g, ' ').replace(/\b\w/g, (l) => l.toUpperCase());
+      const statusDisplay = getLoanStatusDisplay(existingPendingLoan.status);
       console.log('⛔ Existing loan found:', existingPendingLoan.reference, existingPendingLoan.status);
-      return res.status(400).json({
-        success: false,
-        message: `You already have a ${statusDisplay} loan application (${existingPendingLoan.reference}). Please wait for it to be processed or closed before applying for a new loan. You can cancel it from Loan History if needed.`,
+      return sendErrorResponse(
+        res,
+        400,
+        `You already have a ${statusDisplay} loan application (${existingPendingLoan.reference}). Please wait for it to be processed or closed before applying for a new loan. You can cancel it from Loan History if needed.`,
+        undefined,
+        {
         existingLoan: {
           id: existingPendingLoan.id.toString(),
           reference: existingPendingLoan.reference,
           status: existingPendingLoan.status,
           statusDisplay: statusDisplay,
         },
-      });
+        }
+      );
     }
 
     // Note: Documents are not required at loan creation time
@@ -105,14 +105,18 @@ export const createLoan = async (req: AuthRequest, res: Response, next: NextFunc
     });
 
     if (!borrower?.address || !borrower?.civilStatus) {
-      return res.status(400).json({
-        success: false,
-        message: 'Borrower information incomplete. Please complete your profile with address and civil status before submitting your loan application.',
+      return sendErrorResponse(
+        res,
+        400,
+        'Borrower information incomplete. Please complete your profile with address and civil status before submitting your loan application.',
+        undefined,
+        {
         missingFields: {
           address: !borrower?.address,
           civilStatus: !borrower?.civilStatus,
         },
-      });
+        }
+      );
     }
 
     // Validate request data
@@ -121,13 +125,10 @@ export const createLoan = async (req: AuthRequest, res: Response, next: NextFunc
     console.log('✅ Validation passed:', validatedData);
     const principalAmount = validatedData.principalAmount || validatedData.amount;
     const tenor = validatedData.tenor;
-    const interestRate = validatedData.interestRate || 0.24; // 24% default as decimal (0.24)
+    const interestRate = validatedData.interestRate || LoanDefaults.INTEREST_RATE;
     
     if (!principalAmount) {
-      return res.status(400).json({
-        success: false,
-        message: 'Loan amount is required',
-      });
+      return sendErrorResponse(res, 400, 'Loan amount is required');
     }
 
     // Interest rate is stored as decimal (0.24 = 24%)
@@ -135,8 +136,10 @@ export const createLoan = async (req: AuthRequest, res: Response, next: NextFunc
     const annualRatePercent = interestRate * 100; // 0.24 * 100 = 24%
     const monthlyEMI = calculateEMI(principalAmount, annualRatePercent, tenor);
 
-    // Calculate maturity date (same day of month, or last day if month doesn't have that day)
-    const applicationDate = new Date();
+    // Use provided application date or current date
+    const applicationDate = validatedData.applicationDate 
+      ? new Date(validatedData.applicationDate)
+      : new Date();
     // Reset time to midnight for date-only storage
     applicationDate.setHours(0, 0, 0, 0);
     
@@ -149,26 +152,60 @@ export const createLoan = async (req: AuthRequest, res: Response, next: NextFunc
     maturityDate.setDate(Math.min(targetDay, lastDayOfMonth));
     maturityDate.setHours(0, 0, 0, 0);
 
-    // Generate loan reference
-    const reference = await generateLoanReference();
+    // Create loan with reference generation inside transaction to prevent race conditions
+    if (!req.borrower) {
+      return sendErrorResponse(res, 400, 'Borrower information not available');
+    }
 
-    // Create loan
-    const loan = await prisma.loan.create({
+    const borrowerName = req.borrower.fullName;
+    const borrowerId = req.borrowerId;
+
+    const loan = await prisma.$transaction(async (tx) => {
+      // Generate loan reference inside transaction with locking
+      const year = new Date().getFullYear();
+      const pattern = `MF-${year}-%`;
+      
+      const result = await tx.$queryRaw<Array<{ reference: string }>>`
+        SELECT reference 
+        FROM loans 
+        WHERE reference LIKE ${pattern}
+        ORDER BY created_at DESC 
+        LIMIT 1
+        FOR UPDATE
+      `;
+
+      let sequence = 1;
+      if (result && result.length > 0 && result[0]?.reference) {
+        const match = result[0].reference.match(/MF-\d{4}-(\d+)/);
+        if (match) {
+          sequence = parseInt(match[1]) + 1;
+        }
+      }
+
+      const reference = `MF-${year}-${sequence.toString().padStart(4, '0')}`;
+
+      // Create loan inside the same transaction
+      const createdLoan = await tx.loan.create({
       data: {
         reference,
-        borrowerId: BigInt(req.borrowerId),
-        borrowerName: req.borrower.fullName,
+          borrowerId: BigInt(borrowerId),
+          borrowerName: borrowerName,
         principalAmount: principalAmount,
         interestRate: interestRate, // Store as decimal (0.24 = 24%)
         applicationDate,
         maturityDate,
-        status: 'new_application',
+          status: LoanStatus.NEW_APPLICATION,
         totalDisbursed: 0,
         totalPaid: 0,
         totalPenalties: 0,
+          penaltyGraceDays: LoanDefaults.PENALTY_GRACE_DAYS,
+          penaltyDailyRate: LoanDefaults.PENALTY_DAILY_RATE,
         isActive: true,
-        remarks: 'Mobile app application',
-      },
+          remarks: LoanDefaults.REMARKS_MOBILE_APP,
+        applicationLatitude: validatedData.latitude ? validatedData.latitude : null,
+        applicationLongitude: validatedData.longitude ? validatedData.longitude : null,
+        applicationLocationAddress: validatedData.locationAddress || null,
+        } as any,
       include: {
         borrower: {
           select: {
@@ -180,20 +217,34 @@ export const createLoan = async (req: AuthRequest, res: Response, next: NextFunc
       },
     });
 
-    // Generate payment schedule (repayments)
-    const scheduleData = generatePaymentSchedule(applicationDate, tenor, monthlyEMI);
-    
-    // Only create repayments if schedule data is valid
-    if (scheduleData && scheduleData.length > 0) {
-      await prisma.repayment.createMany({
-        data: scheduleData.map((item, index) => ({
+      // Generate payment schedule (repayments) inside transaction
+      const scheduleData = generatePaymentSchedule(applicationDate, tenor, monthlyEMI);
+      
+      if (scheduleData && scheduleData.length > 0) {
+        await tx.repayment.createMany({
+          data: scheduleData.map((item, index) => ({
+            loanId: createdLoan.id,
+            dueDate: item.dueDate,
+            amountDue: item.amount,
+            amountPaid: 0,
+            penaltyApplied: 0,
+            note: index === 0 ? 'First payment' : `Payment ${index + 1}`,
+          })),
+        });
+      }
+
+      return createdLoan;
+    });
+
+    // Create guarantor if provided (outside transaction, but after loan is created)
+    if (validatedData.guarantor) {
+      await (prisma as any).guarantor.create({
+        data: {
           loanId: loan.id,
-          dueDate: item.dueDate,
-          amountDue: item.amount,
-          amountPaid: 0,
-          penaltyApplied: 0,
-          note: index === 0 ? 'First payment' : `Payment ${index + 1}`,
-        })),
+          fullName: validatedData.guarantor.fullName,
+          address: validatedData.guarantor.address,
+          civilStatus: validatedData.guarantor.civilStatus || null,
+        },
       });
     }
 
@@ -205,7 +256,7 @@ export const createLoan = async (req: AuthRequest, res: Response, next: NextFunc
           loanId: loan.id,
           type: 'info',
           title: 'Loan Application Submitted',
-          message: `Your loan application ${reference} for ₱${principalAmount.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} has been submitted successfully. We will review it and notify you of the status.`,
+          message: `Your loan application ${loan.reference} for ₱${principalAmount.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} has been submitted successfully. We will review it and notify you of the status.`,
           isRead: false,
         },
       });
@@ -236,15 +287,7 @@ export const createLoan = async (req: AuthRequest, res: Response, next: NextFunc
     console.error('❌ Loan creation error:', error);
     if (error instanceof z.ZodError) {
       console.error('📋 Validation errors:', error.errors);
-      return res.status(400).json({
-        success: false,
-        message: 'Validation error',
-        errors: error.errors.map((e) => ({
-          path: e.path.join('.'),
-          message: e.message,
-          code: e.code,
-        })),
-      });
+      return sendValidationError(res, error);
     }
     return next(error);
   }
@@ -269,8 +312,19 @@ export const getLoans = async (req: AuthRequest, res: Response, next: NextFuncti
       orderBy: { createdAt: 'desc' },
     });
 
+    // Fetch guarantors separately for all loans
+    const loanIds = loans.map(loan => loan.id);
+    const guarantors = await (prisma as any).guarantor.findMany({
+      where: {
+        loanId: { in: loanIds },
+      },
+    });
+    const guarantorMap = new Map(guarantors.map((g: any) => [g.loanId.toString(), g]));
+
     // Format response
-    const formattedLoans = loans.map(loan => ({
+    const formattedLoans = loans.map(loan => {
+      const guarantor = guarantorMap.get(loan.id.toString());
+      return {
       id: loan.id.toString(),
       reference: loan.reference,
       borrowerName: loan.borrowerName,
@@ -283,7 +337,16 @@ export const getLoans = async (req: AuthRequest, res: Response, next: NextFuncti
       totalDisbursed: loan.totalDisbursed.toString(),
       totalPaid: loan.totalPaid.toString(),
       totalPenalties: loan.totalPenalties.toString(),
-      repayments: loan.repayments.map(rep => ({
+        applicationLatitude: (loan as any).applicationLatitude?.toString() || null,
+        applicationLongitude: (loan as any).applicationLongitude?.toString() || null,
+        applicationLocationAddress: (loan as any).applicationLocationAddress || null,
+        guarantor: guarantor ? {
+          id: (guarantor as any).id.toString(),
+          fullName: (guarantor as any).fullName,
+          address: (guarantor as any).address,
+          civilStatus: (guarantor as any).civilStatus || null,
+        } : null,
+        repayments: loan.repayments.map((rep: any) => ({
         id: rep.id.toString(),
         dueDate: rep.dueDate,
         amountDue: rep.amountDue.toString(),
@@ -291,7 +354,8 @@ export const getLoans = async (req: AuthRequest, res: Response, next: NextFuncti
         paidAt: rep.paidAt,
         penaltyApplied: rep.penaltyApplied.toString(),
       })),
-    }));
+      };
+    });
 
     // Return loans array directly in 'loans' property to match frontend expectations
     res.json({
@@ -331,11 +395,15 @@ export const getLoanById = async (req: AuthRequest, res: Response, next: NextFun
     });
 
     if (!loan) {
-      return res.status(404).json({
-        success: false,
-        message: 'Loan not found',
-      });
+      return sendErrorResponse(res, 404, 'Loan not found');
     }
+
+    // Fetch guarantor separately
+    const guarantor = await (prisma as any).guarantor.findUnique({
+      where: {
+        loanId: loan.id,
+      },
+      });
 
     return res.json({
       success: true,
@@ -352,7 +420,16 @@ export const getLoanById = async (req: AuthRequest, res: Response, next: NextFun
         totalDisbursed: loan.totalDisbursed.toString(),
         totalPaid: loan.totalPaid.toString(),
         totalPenalties: loan.totalPenalties.toString(),
-        repayments: loan.repayments.map(rep => ({
+        applicationLatitude: (loan as any).applicationLatitude?.toString() || null,
+        applicationLongitude: (loan as any).applicationLongitude?.toString() || null,
+        applicationLocationAddress: (loan as any).applicationLocationAddress || null,
+        guarantor: guarantor ? {
+          id: (guarantor as any).id.toString(),
+          fullName: (guarantor as any).fullName,
+          address: (guarantor as any).address,
+          civilStatus: (guarantor as any).civilStatus || null,
+        } : null,
+        repayments: loan.repayments.map((rep: any) => ({
           id: rep.id.toString(),
           dueDate: rep.dueDate,
           amountDue: rep.amountDue.toString(),
@@ -386,26 +463,24 @@ export const cancelLoan = async (req: AuthRequest, res: Response, next: NextFunc
     });
 
     if (!loan) {
-      return res.status(404).json({
-        success: false,
-        message: 'Loan not found or already cancelled',
-      });
+      return sendErrorResponse(res, 404, 'Loan not found or already cancelled');
     }
 
     // Only allow cancellation for pending applications
-    const cancellableStatuses = ['new_application', 'under_review'];
-    if (!cancellableStatuses.includes(loan.status)) {
-      return res.status(400).json({
-        success: false,
-        message: `Cannot cancel loan application. Loan is already ${loan.status.replace('_', ' ')}. Only pending applications (new application or under review) can be cancelled.`,
-      });
+    if (!isCancellableStatus(loan.status)) {
+      const statusDisplay = getLoanStatusDisplay(loan.status);
+      return sendErrorResponse(
+        res,
+        400,
+        `Cannot cancel loan application. Loan is already ${statusDisplay}. Only pending applications (new application or under review) can be cancelled.`
+      );
     }
 
     // Cancel the loan by setting status to cancelled and isActive to false
     const cancelledLoan = await prisma.loan.update({
       where: { id: loan.id },
       data: {
-        status: 'cancelled',
+        status: LoanStatus.CANCELLED,
         isActive: false,
       },
     });
@@ -448,10 +523,7 @@ export const getLoanStatus = async (req: AuthRequest, res: Response, next: NextF
     });
 
     if (!loan) {
-      return res.status(404).json({
-        success: false,
-        message: 'Loan not found',
-      });
+      return sendErrorResponse(res, 404, 'Loan not found');
     }
 
     return res.json({

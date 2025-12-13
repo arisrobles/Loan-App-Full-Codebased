@@ -8,6 +8,7 @@ use App\Models\Borrower;
 use App\Models\Payment;
 use App\Helpers\LoanHelper;
 use App\Helpers\NotificationHelper;
+use App\Constants\LoanDefaults;
 use Carbon\Carbon;
 use Carbon\CarbonImmutable;
 use Illuminate\Http\Request;
@@ -193,6 +194,12 @@ class LoanController extends Controller
             'penalty_grace_days' => ['nullable', 'integer', 'min:0'],
             'penalty_daily_rate' => ['nullable', 'numeric', 'min:0'],
             'remarks' => ['nullable', 'string', 'max:255'],
+            'application_latitude' => ['nullable', 'numeric', 'min:-90', 'max:90'],
+            'application_longitude' => ['nullable', 'numeric', 'min:-180', 'max:180'],
+            'application_location_address' => ['nullable', 'string', 'max:255'],
+            'guarantor_full_name' => ['nullable', 'string', 'max:255'],
+            'guarantor_address' => ['nullable', 'string', 'max:255'],
+            'guarantor_civil_status' => ['nullable', 'string', 'max:64'],
         ]);
 
         DB::beginTransaction();
@@ -200,8 +207,31 @@ class LoanController extends Controller
             // Get borrower
             $borrower = Borrower::findOrFail($data['borrower_id']);
 
+            // Validate borrower has required information
+            if (!$borrower->address || !$borrower->civil_status) {
+                return back()
+                    ->withInput()
+                    ->withErrors('Borrower information incomplete. Please ensure the borrower has address and civil status set in their profile.');
+            }
+
+            // Check for existing pending/active loan applications
+            $existingPendingLoan = Loan::where('borrower_id', $borrower->id)
+                ->whereIn('status', [
+                    Loan::ST_NEW, Loan::ST_REVIEW, Loan::ST_APPROVED,
+                    Loan::ST_FOR_RELEASE, Loan::ST_DISBURSED,
+                ])
+                ->where('is_active', true)
+                ->first();
+
+            if ($existingPendingLoan) {
+                $statusDisplay = ucfirst(str_replace('_', ' ', $existingPendingLoan->status));
+                return back()
+                    ->withInput()
+                    ->withErrors("Borrower already has a {$statusDisplay} loan application ({$existingPendingLoan->reference}). Please wait for it to be processed or closed before creating a new loan.");
+            }
+
             // Set defaults
-            $interestRate = ($data['interest_rate'] ?? 24) / 100; // Convert percentage to decimal (24% = 0.24)
+            $interestRate = ($data['interest_rate'] ?? LoanDefaults::INTEREST_RATE_PERCENT) / 100; // Convert percentage to decimal (24% = 0.24)
             $applicationDate = Carbon::parse($data['application_date'])->startOfDay();
             $tenor = (int) $data['tenor'];
 
@@ -209,12 +239,12 @@ class LoanController extends Controller
             $maturityDate = LoanHelper::calculateMaturityDate($applicationDate, $tenor);
 
             // Calculate EMI
-            $monthlyEMI = LoanHelper::calculateEMI($data['principal_amount'], $data['interest_rate'] ?? 24, $tenor);
+            $monthlyEMI = LoanHelper::calculateEMI($data['principal_amount'], $data['interest_rate'] ?? LoanDefaults::INTEREST_RATE_PERCENT, $tenor);
 
-            // Generate loan reference
+            // Generate loan reference (inside transaction, already has locking)
             $reference = LoanHelper::generateLoanReference();
 
-            // Create loan
+            // Create loan (reference generation is already in transaction with locking)
             $loan = Loan::create([
                 'reference' => $reference,
                 'borrower_id' => $borrower->id,
@@ -227,10 +257,13 @@ class LoanController extends Controller
                 'total_disbursed' => 0,
                 'total_paid' => 0,
                 'total_penalties' => 0,
-                'penalty_grace_days' => $data['penalty_grace_days'] ?? 0,
-                'penalty_daily_rate' => $data['penalty_daily_rate'] ?? 0.001000,
+                'penalty_grace_days' => $data['penalty_grace_days'] ?? LoanDefaults::PENALTY_GRACE_DAYS,
+                'penalty_daily_rate' => $data['penalty_daily_rate'] ?? LoanDefaults::PENALTY_DAILY_RATE,
                 'is_active' => true,
-                'remarks' => $data['remarks'] ?? 'Admin panel application',
+                'remarks' => $data['remarks'] ?? LoanDefaults::REMARKS_ADMIN_PANEL,
+                'application_latitude' => $data['application_latitude'] ?? null,
+                'application_longitude' => $data['application_longitude'] ?? null,
+                'application_location_address' => $data['application_location_address'] ?? null,
             ]);
 
             // Generate payment schedule
@@ -247,6 +280,16 @@ class LoanController extends Controller
                     'amount_paid' => 0,
                     'penalty_applied' => 0,
                     'note' => $index === 0 ? 'First payment' : "Payment " . ($index + 1),
+                ]);
+            }
+
+            // Create guarantor if provided
+            if (!empty($data['guarantor_full_name']) && !empty($data['guarantor_address'])) {
+                \App\Models\Guarantor::create([
+                    'loan_id' => $loan->id,
+                    'full_name' => $data['guarantor_full_name'],
+                    'address' => $data['guarantor_address'],
+                    'civil_status' => $data['guarantor_civil_status'] ?? null,
                 ]);
             }
 
@@ -276,6 +319,7 @@ class LoanController extends Controller
         // Load relationships
         $loan->load([
             'borrower',
+            'guarantor',
             'repayments' => function($query) {
                 $query->orderBy('due_date');
             },
@@ -283,6 +327,10 @@ class LoanController extends Controller
                 $query->with(['receiptDocument', 'approvedBy'])
                       ->orderBy('paid_at', 'desc')
                       ->orderBy('created_at', 'desc');
+            },
+            'documents' => function($query) {
+                $query->orderBy('document_type')
+                      ->orderBy('uploaded_at', 'desc');
             }
         ]);
 
@@ -332,11 +380,18 @@ class LoanController extends Controller
             'borrower_id' => ['required', 'exists:borrowers,id'],
             'principal_amount' => ['required', 'numeric', 'min:3500', 'max:50000'],
             'interest_rate' => ['nullable', 'numeric', 'min:0', 'max:100'],
+            'tenor' => ['required', 'integer', 'min:1', 'max:18'],
             'application_date' => ['required', 'date'],
             'release_date' => ['nullable', 'date'],
             'penalty_grace_days' => ['nullable', 'integer', 'min:0'],
             'penalty_daily_rate' => ['nullable', 'numeric', 'min:0'],
             'remarks' => ['nullable', 'string', 'max:255'],
+            'application_latitude' => ['nullable', 'numeric', 'min:-90', 'max:90'],
+            'application_longitude' => ['nullable', 'numeric', 'min:-180', 'max:180'],
+            'application_location_address' => ['nullable', 'string', 'max:255'],
+            'guarantor_full_name' => ['nullable', 'string', 'max:255'],
+            'guarantor_address' => ['nullable', 'string', 'max:255'],
+            'guarantor_civil_status' => ['nullable', 'string', 'max:64'],
         ]);
 
         DB::beginTransaction();
@@ -347,6 +402,19 @@ class LoanController extends Controller
             // Set defaults
             $interestRate = ($data['interest_rate'] ?? $loan->interest_rate * 100) / 100;
             $applicationDate = Carbon::parse($data['application_date'])->startOfDay();
+            $tenor = (int) ($data['tenor'] ?? $loan->repayments()->count());
+
+            // Check if loan amount or tenor changed - need to regenerate schedule
+            $amountChanged = abs((float)$loan->principal_amount - (float)$data['principal_amount']) > 0.01;
+            $tenorChanged = $tenor !== $loan->repayments()->count();
+            $needsScheduleRegeneration = $amountChanged || $tenorChanged;
+
+            // If schedule needs regeneration, check if loan has payments
+            if ($needsScheduleRegeneration && $loan->payments()->where('status', Payment::STATUS_APPROVED)->exists()) {
+                return back()
+                    ->withInput()
+                    ->withErrors('Cannot update loan amount or tenor. This loan has approved payments. Please close or cancel the loan first.');
+            }
 
             // Update loan
             $loan->update([
@@ -359,7 +427,56 @@ class LoanController extends Controller
                 'penalty_grace_days' => $data['penalty_grace_days'] ?? $loan->penalty_grace_days,
                 'penalty_daily_rate' => $data['penalty_daily_rate'] ?? $loan->penalty_daily_rate,
                 'remarks' => $data['remarks'] ?? $loan->remarks,
+                'application_latitude' => $data['application_latitude'] ?? $loan->application_latitude,
+                'application_longitude' => $data['application_longitude'] ?? $loan->application_longitude,
+                'application_location_address' => $data['application_location_address'] ?? $loan->application_location_address,
             ]);
+
+            // Regenerate repayment schedule if needed
+            if ($needsScheduleRegeneration) {
+                // Delete existing repayments
+                $loan->repayments()->delete();
+
+                // Recalculate maturity date
+                $maturityDate = LoanHelper::calculateMaturityDate($applicationDate, $tenor);
+                $loan->update(['maturity_date' => $maturityDate]);
+
+                // Calculate new EMI
+                $monthlyEMI = LoanHelper::calculateEMI($data['principal_amount'], $data['interest_rate'] ?? ($loan->interest_rate * 100), $tenor);
+
+                // Generate new payment schedule
+                $scheduleData = LoanHelper::generatePaymentSchedule($applicationDate, $tenor, $monthlyEMI);
+
+                // Create new repayment records
+                foreach ($scheduleData as $index => $item) {
+                    Repayment::create([
+                        'loan_id' => $loan->id,
+                        'due_date' => $item['dueDate'] instanceof \Carbon\Carbon
+                            ? $item['dueDate']->toDateString()
+                            : $item['dueDate'],
+                        'amount_due' => $item['amount'],
+                        'amount_paid' => 0,
+                        'penalty_applied' => 0,
+                        'note' => $index === 0 ? 'First payment' : "Payment " . ($index + 1),
+                    ]);
+                }
+            }
+
+            // Update or create guarantor
+            if (!empty($data['guarantor_full_name']) && !empty($data['guarantor_address'])) {
+                // Update existing guarantor or create new one
+                $loan->guarantor()->updateOrCreate(
+                    ['loan_id' => $loan->id],
+                    [
+                        'full_name' => $data['guarantor_full_name'],
+                        'address' => $data['guarantor_address'],
+                        'civil_status' => $data['guarantor_civil_status'] ?? null,
+                    ]
+                );
+            } elseif (empty($data['guarantor_full_name']) && empty($data['guarantor_address'])) {
+                // Delete guarantor if both fields are empty
+                $loan->guarantor()->delete();
+            }
 
             DB::commit();
 

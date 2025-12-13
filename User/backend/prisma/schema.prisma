@@ -91,6 +91,9 @@ model Loan {
   penaltyDailyRate    Decimal          @map("penalty_daily_rate") @default(0.001000) @db.Decimal(7, 6)
   isActive            Boolean          @map("is_active") @default(true)
   remarks             String?          @db.VarChar(255)
+  applicationLatitude Decimal?         @map("application_latitude") @db.Decimal(10, 8)
+  applicationLongitude Decimal?        @map("application_longitude") @db.Decimal(11, 8)
+  applicationLocationAddress String?   @map("application_location_address") @db.VarChar(255)
   createdAt           DateTime?        @map("created_at") @default(now())
   updatedAt           DateTime?        @map("updated_at") @updatedAt
 
@@ -100,6 +103,7 @@ model Loan {
   bankTransactions    BankTransaction[]
   documents           Document[]
   notifications       Notification[]
+  guarantor           Guarantor?
 
   @@index([applicationDate])
   @@index([releaseDate])
@@ -108,6 +112,21 @@ model Loan {
   @@index([isActive])
   @@index([status, isActive])
   @@map("loans")
+}
+
+// Guarantors for loans
+model Guarantor {
+  id           BigInt    @id @default(autoincrement()) @db.UnsignedBigInt
+  loanId       BigInt    @unique @map("loan_id") @db.UnsignedBigInt
+  fullName     String    @map("full_name") @db.VarChar(255)
+  address      String    @db.VarChar(255)
+  civilStatus  String?   @map("civil_status") @db.VarChar(64)
+  createdAt    DateTime? @map("created_at") @default(now())
+  updatedAt    DateTime? @map("updated_at") @updatedAt
+
+  loan         Loan      @relation(fields: [loanId], references: [id], onDelete: Cascade)
+
+  @@map("guarantors")
 }
 
 enum LoanStatus {

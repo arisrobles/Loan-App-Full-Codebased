@@ -71,10 +71,10 @@
           Interest Rate (% per annum)
         </label>
         <input type="number" name="interest_rate" id="interest_rate"
-               value="{{ old('interest_rate', 24) }}"
+               value="{{ old('interest_rate', \App\Constants\LoanDefaults::INTEREST_RATE_PERCENT) }}"
                min="0" max="100" step="0.01"
                class="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500">
-        <p class="mt-1 text-[11px] text-slate-500">Default: 24% per annum</p>
+        <p class="mt-1 text-[11px] text-slate-500">Default: {{ \App\Constants\LoanDefaults::INTEREST_RATE_PERCENT }}% per annum</p>
       </div>
 
       {{-- Tenor --}}
@@ -82,13 +82,11 @@
         <label class="block text-xs font-semibold text-slate-600 mb-1">
           Tenor (Months) <span class="text-rose-500">*</span>
         </label>
-        <select name="tenor" id="tenor" required
+        <input type="number" name="tenor" id="tenor" required
+               value="{{ old('tenor') }}"
+               min="1" max="18" step="1"
                 class="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500">
-          <option value="">Select tenor...</option>
-          <option value="6" {{ old('tenor') == '6' ? 'selected' : '' }}>6 months</option>
-          <option value="12" {{ old('tenor') == '12' ? 'selected' : '' }}>12 months</option>
-          <option value="36" {{ old('tenor') == '36' ? 'selected' : '' }}>36 months</option>
-        </select>
+        <p class="mt-1 text-[11px] text-slate-500">Range: 1-18 months (must be an integer)</p>
       </div>
 
       {{-- Application Date --}}
@@ -108,10 +106,10 @@
             Penalty Grace Days
           </label>
           <input type="number" name="penalty_grace_days" id="penalty_grace_days"
-                 value="{{ old('penalty_grace_days', 0) }}"
+                 value="{{ old('penalty_grace_days', \App\Constants\LoanDefaults::PENALTY_GRACE_DAYS) }}"
                  min="0" step="1"
                  class="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500">
-          <p class="mt-1 text-[11px] text-slate-500">Default: 0</p>
+          <p class="mt-1 text-[11px] text-slate-500">Default: {{ \App\Constants\LoanDefaults::PENALTY_GRACE_DAYS }}</p>
         </div>
 
         <div>
@@ -119,10 +117,10 @@
             Penalty Daily Rate
           </label>
           <input type="number" name="penalty_daily_rate" id="penalty_daily_rate"
-                 value="{{ old('penalty_daily_rate', 0.001) }}"
+                 value="{{ old('penalty_daily_rate', \App\Constants\LoanDefaults::PENALTY_DAILY_RATE) }}"
                  min="0" max="1" step="0.000001"
                  class="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500">
-          <p class="mt-1 text-[11px] text-slate-500">Default: 0.001 (0.1% per day)</p>
+          <p class="mt-1 text-[11px] text-slate-500">Default: {{ \App\Constants\LoanDefaults::PENALTY_DAILY_RATE }} (0.1% per day)</p>
         </div>
       </div>
 
@@ -133,6 +131,82 @@
         </label>
         <textarea name="remarks" id="remarks" rows="3"
                   class="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500">{{ old('remarks') }}</textarea>
+      </div>
+
+      {{-- Location Information (Optional) --}}
+      <div class="border-t border-slate-200 pt-6">
+        <h3 class="text-sm font-semibold text-slate-700 mb-4">Application Location (Optional)</h3>
+        <div class="grid grid-cols-2 gap-4 mb-4">
+          <div>
+            <label class="block text-xs font-semibold text-slate-600 mb-1">
+              Latitude
+            </label>
+            <input type="number" name="application_latitude" id="application_latitude"
+                   value="{{ old('application_latitude') }}"
+                   step="0.00000001" min="-90" max="90"
+                   class="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500">
+            <p class="mt-1 text-[11px] text-slate-500">Decimal format (e.g., 14.5995)</p>
+          </div>
+          <div>
+            <label class="block text-xs font-semibold text-slate-600 mb-1">
+              Longitude
+            </label>
+            <input type="number" name="application_longitude" id="application_longitude"
+                   value="{{ old('application_longitude') }}"
+                   step="0.00000001" min="-180" max="180"
+                   class="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500">
+            <p class="mt-1 text-[11px] text-slate-500">Decimal format (e.g., 120.9842)</p>
+          </div>
+        </div>
+        <div>
+          <label class="block text-xs font-semibold text-slate-600 mb-1">
+            Location Address
+          </label>
+          <input type="text" name="application_location_address" id="application_location_address"
+                 value="{{ old('application_location_address') }}"
+                 maxlength="255"
+                 class="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500">
+          <p class="mt-1 text-[11px] text-slate-500">Full address where application was submitted</p>
+        </div>
+      </div>
+
+      {{-- Guarantor Information (Optional) --}}
+      <div class="border-t border-slate-200 pt-6">
+        <h3 class="text-sm font-semibold text-slate-700 mb-4">Guarantor Information (Optional)</h3>
+        <div class="space-y-4">
+          <div>
+            <label class="block text-xs font-semibold text-slate-600 mb-1">
+              Guarantor Full Name
+            </label>
+            <input type="text" name="guarantor_full_name" id="guarantor_full_name"
+                   value="{{ old('guarantor_full_name') }}"
+                   maxlength="255"
+                   class="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500">
+          </div>
+          <div>
+            <label class="block text-xs font-semibold text-slate-600 mb-1">
+              Guarantor Address
+            </label>
+            <input type="text" name="guarantor_address" id="guarantor_address"
+                   value="{{ old('guarantor_address') }}"
+                   maxlength="255"
+                   class="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500">
+          </div>
+          <div>
+            <label class="block text-xs font-semibold text-slate-600 mb-1">
+              Guarantor Civil Status
+            </label>
+            <select name="guarantor_civil_status" id="guarantor_civil_status"
+                    class="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500">
+              <option value="">Select civil status...</option>
+              <option value="Single" {{ old('guarantor_civil_status') == 'Single' ? 'selected' : '' }}>Single</option>
+              <option value="Married" {{ old('guarantor_civil_status') == 'Married' ? 'selected' : '' }}>Married</option>
+              <option value="Divorced" {{ old('guarantor_civil_status') == 'Divorced' ? 'selected' : '' }}>Divorced</option>
+              <option value="Widowed" {{ old('guarantor_civil_status') == 'Widowed' ? 'selected' : '' }}>Widowed</option>
+            </select>
+            <p class="mt-1 text-[11px] text-slate-500">Optional</p>
+          </div>
+        </div>
       </div>
 
       {{-- Preview Section (calculated values) --}}

@@ -84,6 +84,21 @@
         <p class="mt-1 text-[11px] text-slate-500">Current: {{ number_format($loan->interest_rate * 100, 2) }}% per annum</p>
       </div>
 
+      {{-- Tenor (Loan Term) --}}
+      <div>
+        <label class="block text-xs font-semibold text-slate-600 mb-1">
+          Loan Term (Tenor in months) <span class="text-rose-500">*</span>
+        </label>
+        <input type="number" name="tenor" id="tenor"
+               value="{{ old('tenor', $loan->repayments()->count()) }}"
+               min="1" max="18" step="1" required
+               class="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500">
+        <p class="mt-1 text-[11px] text-slate-500">Current: {{ $loan->repayments()->count() }} months | Range: 1-18 months (must be an integer)</p>
+        <p class="mt-1 text-[10px] text-amber-600">
+          ⚠️ Changing tenor or loan amount will regenerate the repayment schedule. This is only allowed if the loan has no approved payments.
+        </p>
+      </div>
+
       {{-- Application Date --}}
       <div>
         <label class="block text-xs font-semibold text-slate-600 mb-1">
@@ -136,6 +151,82 @@
         </label>
         <textarea name="remarks" id="remarks" rows="3"
                   class="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500">{{ old('remarks', $loan->remarks) }}</textarea>
+      </div>
+
+      {{-- Location Information (Optional) --}}
+      <div class="border-t border-slate-200 pt-6">
+        <h3 class="text-sm font-semibold text-slate-700 mb-4">Application Location (Optional)</h3>
+        <div class="grid grid-cols-2 gap-4 mb-4">
+          <div>
+            <label class="block text-xs font-semibold text-slate-600 mb-1">
+              Latitude
+            </label>
+            <input type="number" name="application_latitude" id="application_latitude"
+                   value="{{ old('application_latitude', $loan->application_latitude) }}"
+                   step="0.00000001" min="-90" max="90"
+                   class="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500">
+            <p class="mt-1 text-[11px] text-slate-500">Decimal format (e.g., 14.5995)</p>
+          </div>
+          <div>
+            <label class="block text-xs font-semibold text-slate-600 mb-1">
+              Longitude
+            </label>
+            <input type="number" name="application_longitude" id="application_longitude"
+                   value="{{ old('application_longitude', $loan->application_longitude) }}"
+                   step="0.00000001" min="-180" max="180"
+                   class="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500">
+            <p class="mt-1 text-[11px] text-slate-500">Decimal format (e.g., 120.9842)</p>
+          </div>
+        </div>
+        <div>
+          <label class="block text-xs font-semibold text-slate-600 mb-1">
+            Location Address
+          </label>
+          <input type="text" name="application_location_address" id="application_location_address"
+                 value="{{ old('application_location_address', $loan->application_location_address) }}"
+                 maxlength="255"
+                 class="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500">
+          <p class="mt-1 text-[11px] text-slate-500">Full address where application was submitted</p>
+        </div>
+      </div>
+
+      {{-- Guarantor Information (Optional) --}}
+      <div class="border-t border-slate-200 pt-6">
+        <h3 class="text-sm font-semibold text-slate-700 mb-4">Guarantor Information (Optional)</h3>
+        <div class="space-y-4">
+          <div>
+            <label class="block text-xs font-semibold text-slate-600 mb-1">
+              Guarantor Full Name
+            </label>
+            <input type="text" name="guarantor_full_name" id="guarantor_full_name"
+                   value="{{ old('guarantor_full_name', $loan->guarantor?->full_name) }}"
+                   maxlength="255"
+                   class="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500">
+          </div>
+          <div>
+            <label class="block text-xs font-semibold text-slate-600 mb-1">
+              Guarantor Address
+            </label>
+            <input type="text" name="guarantor_address" id="guarantor_address"
+                   value="{{ old('guarantor_address', $loan->guarantor?->address) }}"
+                   maxlength="255"
+                   class="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500">
+          </div>
+          <div>
+            <label class="block text-xs font-semibold text-slate-600 mb-1">
+              Guarantor Civil Status
+            </label>
+            <select name="guarantor_civil_status" id="guarantor_civil_status"
+                    class="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500">
+              <option value="">Select civil status...</option>
+              <option value="Single" {{ old('guarantor_civil_status', $loan->guarantor?->civil_status) == 'Single' ? 'selected' : '' }}>Single</option>
+              <option value="Married" {{ old('guarantor_civil_status', $loan->guarantor?->civil_status) == 'Married' ? 'selected' : '' }}>Married</option>
+              <option value="Divorced" {{ old('guarantor_civil_status', $loan->guarantor?->civil_status) == 'Divorced' ? 'selected' : '' }}>Divorced</option>
+              <option value="Widowed" {{ old('guarantor_civil_status', $loan->guarantor?->civil_status) == 'Widowed' ? 'selected' : '' }}>Widowed</option>
+            </select>
+            <p class="mt-1 text-[11px] text-slate-500">Optional</p>
+          </div>
+        </div>
       </div>
 
       {{-- Read-only Information --}}

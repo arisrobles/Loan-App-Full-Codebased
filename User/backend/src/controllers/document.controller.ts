@@ -1,4 +1,5 @@
 import { PrismaClient } from '@prisma/client';
+import { LoanStatus } from '../constants/loanStatus';
 import { NextFunction, Response } from 'express';
 import { z } from 'zod';
 import { AuthRequest } from '../middleware/auth.middleware';
@@ -62,7 +63,7 @@ export const uploadDocument = async (req: AuthRequest, res: Response, next: Next
 
       // For RECEIPT documents, validate loan is disbursed
       if (documentType === 'RECEIPT') {
-        if (loan.status !== 'disbursed') {
+        if (loan.status !== LoanStatus.DISBURSED) {
           return res.status(400).json({
             success: false,
             message: `Cannot upload receipt. Loan status is "${loan.status}". Receipts can only be uploaded for disbursed loans.`,

@@ -185,47 +185,56 @@ class DocumentController extends Controller
         try {
             $document = Document::findOrFail((int) $id);
 
-            // Extract filename from file_url
+            // Extract file path from file_url
             $fileUrl = $document->file_url ?? '';
             if (empty($fileUrl)) {
                 abort(404, "Document has no file URL");
             }
 
-            // Parse URL to get filename
+            // Parse URL to get the relative path (e.g., /uploads/loan-documents/123/file.jpg or /uploads/file.jpg)
             $parsedUrl = parse_url($fileUrl, PHP_URL_PATH);
-            if ($parsedUrl) {
-                $filename = basename($parsedUrl);
-            } else {
+            if (!$parsedUrl) {
                 // If parse_url fails, try to extract from the URL directly
-                $filename = basename($fileUrl);
+                $parsedUrl = $fileUrl;
             }
 
-            if (empty($filename)) {
-                abort(404, "Could not extract filename from URL: {$fileUrl}");
+            // Remove leading slash and get relative path
+            $relativePath = ltrim($parsedUrl, '/');
+            
+            if (empty($relativePath)) {
+                abort(404, "Could not extract file path from URL: {$fileUrl}");
             }
 
             // Try multiple possible locations where files might be stored
-            // Files can be in Laravel public/uploads or User backend uploads directory
+            // Files can be in Laravel public directory or User backend uploads directory
             $basePath = base_path();
             $possiblePaths = [
-                public_path('uploads/' . $filename),
-                $basePath . DIRECTORY_SEPARATOR . '..' . DIRECTORY_SEPARATOR . 'User' . DIRECTORY_SEPARATOR . 'backend' . DIRECTORY_SEPARATOR . 'uploads' . DIRECTORY_SEPARATOR . $filename,
-                dirname($basePath) . DIRECTORY_SEPARATOR . 'User' . DIRECTORY_SEPARATOR . 'backend' . DIRECTORY_SEPARATOR . 'uploads' . DIRECTORY_SEPARATOR . $filename,
-                storage_path('app/public/uploads/' . $filename),
-                storage_path('app/uploads/' . $filename),
+                // Laravel public directory (for files uploaded via admin panel)
+                public_path($relativePath),
+                // User backend uploads directory (for files uploaded via mobile app)
+                $basePath . '/../User/backend/' . $relativePath,
+                $basePath . '/User/backend/' . $relativePath,
+                dirname($basePath) . '/User/backend/' . $relativePath,
+                // Alternative paths
+                storage_path('app/public/' . $relativePath),
+                storage_path('app/' . $relativePath),
             ];
 
             $filePath = null;
             foreach ($possiblePaths as $path) {
-                // Resolve relative paths
-                $resolvedPath = realpath($path);
+                // Normalize path separators for Windows
+                $normalizedPath = str_replace(['/', '\\'], DIRECTORY_SEPARATOR, $path);
+                
+                // Resolve relative paths (.. and .)
+                $resolvedPath = realpath($normalizedPath);
+                
+                // If realpath fails, try the path as-is (might be a new file)
+                if ($resolvedPath === false) {
+                    $resolvedPath = $normalizedPath;
+                }
+                
                 if ($resolvedPath && file_exists($resolvedPath) && is_file($resolvedPath)) {
                     $filePath = $resolvedPath;
-                    break;
-                }
-                // Also try without realpath in case of symlinks
-                if (file_exists($path) && is_file($path)) {
-                    $filePath = $path;
                     break;
                 }
             }
@@ -234,15 +243,15 @@ class DocumentController extends Controller
                 \Log::error('Document file not found', [
                     'document_id' => $id,
                     'file_url' => $fileUrl,
-                    'filename' => $filename,
+                    'relative_path' => $relativePath,
                     'base_path' => $basePath,
                     'tried_paths' => $possiblePaths,
                 ]);
-                abort(404, "File not found: {$filename}. Checked multiple locations.");
+                abort(404, "File not found: {$relativePath}. Checked multiple locations.");
             }
 
             $mimeType = $document->mime_type ?? 'application/octet-stream';
-            $originalName = $document->file_name ?? $filename;
+            $originalName = $document->file_name ?? basename($relativePath);
 
             return response()->download($filePath, $originalName, [
                 'Content-Type' => $mimeType,
@@ -267,55 +276,57 @@ class DocumentController extends Controller
         try {
             $document = Document::findOrFail((int) $id);
 
-            // Extract filename from file_url
+            // Extract file path from file_url
             $fileUrl = $document->file_url ?? '';
             if (empty($fileUrl)) {
                 abort(404, "Document has no file URL");
             }
 
-            // Parse URL to get filename
+            // Parse URL to get the relative path (e.g., /uploads/loan-documents/123/file.jpg or /uploads/file.jpg)
             $parsedUrl = parse_url($fileUrl, PHP_URL_PATH);
-            if ($parsedUrl) {
-                $filename = basename($parsedUrl);
-            } else {
+            if (!$parsedUrl) {
                 // If parse_url fails, try to extract from the URL directly
-                $filename = basename($fileUrl);
+                $parsedUrl = $fileUrl;
             }
 
-            if (empty($filename)) {
-                abort(404, "Could not extract filename from URL: {$fileUrl}");
+            // Remove leading slash and get relative path
+            $relativePath = ltrim($parsedUrl, '/');
+            
+            if (empty($relativePath)) {
+                abort(404, "Could not extract file path from URL: {$fileUrl}");
             }
 
             // Try multiple possible locations where files might be stored
-            // Files can be in Laravel public/uploads or User backend uploads directory
+            // Files can be in Laravel public directory or User backend uploads directory
             $basePath = base_path();
             $possiblePaths = [
-                public_path('uploads/' . $filename),
-                $basePath . '/../User/backend/uploads/' . $filename,
-                $basePath . '/User/backend/uploads/' . $filename,
-                dirname($basePath) . '/User/backend/uploads/' . $filename,
-                storage_path('app/public/uploads/' . $filename),
-                storage_path('app/uploads/' . $filename),
+                // Laravel public directory (for files uploaded via admin panel)
+                public_path($relativePath),
+                // User backend uploads directory (for files uploaded via mobile app)
+                $basePath . '/../User/backend/' . $relativePath,
+                $basePath . '/User/backend/' . $relativePath,
+                dirname($basePath) . '/User/backend/' . $relativePath,
+                // Alternative paths
+                storage_path('app/public/' . $relativePath),
+                storage_path('app/' . $relativePath),
             ];
-
-            // Normalize paths (resolve .. and .)
-            $possiblePaths = array_map(function($path) {
-                return realpath(dirname($path)) . '/' . basename($path);
-            }, $possiblePaths);
 
             $filePath = null;
             foreach ($possiblePaths as $path) {
-                if ($path && file_exists($path) && is_file($path)) {
-                    $filePath = $path;
-                    break;
+                // Normalize path separators for Windows
+                $normalizedPath = str_replace(['/', '\\'], DIRECTORY_SEPARATOR, $path);
+                
+                // Resolve relative paths (.. and .)
+                $resolvedPath = realpath($normalizedPath);
+                
+                // If realpath fails, try the path as-is (might be a new file)
+                if ($resolvedPath === false) {
+                    $resolvedPath = $normalizedPath;
                 }
-            }
-
-            if (!$filePath) {
-                // Try one more time with direct path resolution
-                $userBackendPath = dirname(dirname($basePath)) . '/User/backend/uploads/' . $filename;
-                if (file_exists($userBackendPath) && is_file($userBackendPath)) {
-                    $filePath = $userBackendPath;
+                
+                if ($resolvedPath && file_exists($resolvedPath) && is_file($resolvedPath)) {
+                    $filePath = $resolvedPath;
+                    break;
                 }
             }
 
@@ -323,11 +334,11 @@ class DocumentController extends Controller
                 \Log::error('Document file not found for view', [
                     'document_id' => $id,
                     'file_url' => $fileUrl,
-                    'filename' => $filename,
+                    'relative_path' => $relativePath,
                     'base_path' => $basePath,
                     'tried_paths' => $possiblePaths,
                 ]);
-                abort(404, "File not found: {$filename}. Checked multiple locations.");
+                abort(404, "File not found: {$relativePath}. Checked multiple locations.");
             }
 
             $mimeType = $document->mime_type ?? 'application/octet-stream';
@@ -384,6 +395,8 @@ class DocumentController extends Controller
             'SECONDARY_ID' => 'Secondary ID',
             'AGREEMENT' => 'Contract',
             'RECEIPT' => 'Receipt',
+            'SIGNATURE' => 'Signature',
+            'PHOTO_2X2' => '2x2 Photo',
             'OTHER' => 'Misc',
         ];
 

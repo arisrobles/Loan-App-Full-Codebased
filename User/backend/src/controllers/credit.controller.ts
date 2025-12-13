@@ -1,4 +1,5 @@
 import { PrismaClient } from '@prisma/client';
+import { LoanStatus } from '../constants/loanStatus';
 import { NextFunction, Response } from 'express';
 import { AuthRequest } from '../middleware/auth.middleware';
 import { AppError } from '../middleware/errorHandler';
@@ -24,21 +25,21 @@ export const getCreditScore = async (req: AuthRequest, res: Response, next: Next
       prisma.loan.count({ 
         where: { 
           borrowerId, 
-          status: 'approved',
+          status: LoanStatus.APPROVED,
           isActive: true,
         } 
       }),
       prisma.loan.count({ 
         where: { 
           borrowerId, 
-          status: { in: ['new_application', 'under_review'] },
+          status: { in: [LoanStatus.NEW_APPLICATION, LoanStatus.UNDER_REVIEW] },
           isActive: true,
         } 
       }),
       prisma.loan.count({
         where: {
           borrowerId,
-          status: 'disbursed',
+          status: LoanStatus.DISBURSED,
           isActive: true,
         },
       }),

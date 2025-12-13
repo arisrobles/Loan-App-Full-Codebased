@@ -558,27 +558,27 @@ export default function LoanApplicationWizard() {
             // Remove right margin for every 6th item (end of row)
             const isLastInRow = (index + 1) % 6 === 0;
             return (
-            <TouchableOpacity
-              key={item}
+          <TouchableOpacity
+            key={item}
               style={[
                 styles.tenorBox, 
                 tenor === item && styles.activeTenor,
                 isLastInRow && styles.tenorBoxLastInRow
               ]}
-              onPress={() => setTenor(item)}
+            onPress={() => setTenor(item)}
+          >
+            <Text
+              style={[
+                styles.tenorText,
+                tenor === item && styles.activeTenorText,
+              ]}
             >
-              <Text
-                style={[
-                  styles.tenorText,
-                  tenor === item && styles.activeTenorText,
-                ]}
-              >
                 {item}
-              </Text>
-            </TouchableOpacity>
+            </Text>
+          </TouchableOpacity>
           );
         })}
-        </View>
+      </View>
       </ScrollView>
 
       <Card style={styles.card}>
@@ -2834,6 +2834,15 @@ export default function LoanApplicationWizard() {
                 if (location.address) {
                   requestData.locationAddress = location.address;
                 }
+              }
+
+              // Add guarantor data if provided
+              if (hasGuarantor && guarantorDetails.fullName && guarantorDetails.address) {
+                requestData.guarantor = {
+                  fullName: guarantorDetails.fullName,
+                  address: guarantorDetails.address,
+                  civilStatus: guarantorDetails.civilStatus || undefined,
+                };
               }
 
               const loanRes = await api.post("/loans", requestData);
