@@ -1,0 +1,3 @@
+@echo off
+echo Launching SSH Tunnel in a new window...
+start cmd /k "echo Connecting to Hostinger Database... & echo. & echo Enter SSH Password for root when prompted. & echo. & ssh -L 3307:127.0.0.1:3306 root@156.67.214.166"
