@@ -1,7 +1,7 @@
 import React, { createContext, useContext, useEffect, useState, ReactNode } from 'react';
 import { io, Socket } from 'socket.io-client';
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import Constants from 'expo-constants';
+import { getCurrentApiBaseUrl } from '../config/api';
 
 interface SocketContextType {
   socket: Socket | null;
@@ -23,39 +23,6 @@ interface SocketProviderProps {
   children: ReactNode;
 }
 
-// Get API base URL from config or environment
-const getApiBaseUrl = async () => {
-  try {
-    // Try to get from AsyncStorage first (user might have configured it)
-    const storedUrl = await AsyncStorage.getItem('api_base_url');
-    if (storedUrl && storedUrl.startsWith('http')) {
-      return storedUrl.replace('/api/v1', '').replace('/api', ''); // Remove API path
-    }
-    
-    // Try to extract IP from Expo debugger URL
-    const sources = [
-      Constants.expoConfig?.hostUri,
-      Constants.expoConfig?.extra?.debuggerHost,
-      Constants.manifest?.debuggerHost,
-      Constants.manifest2?.extra?.expoGo?.debuggerHost,
-    ];
-
-    for (const source of sources) {
-      if (!source) continue;
-      const match = source.match(/(\d+\.\d+\.\d+\.\d+)/);
-      if (match && match[1] && match[1] !== '127.0.0.1') {
-        return `http://${match[1]}:8080`;
-      }
-    }
-    
-    // Fallback
-    return 'http://localhost:8080';
-  } catch (error) {
-    console.error('Error getting API base URL:', error);
-    return 'http://localhost:8080';
-  }
-};
-
 export const SocketProvider: React.FC<SocketProviderProps> = ({ children }) => {
   const [socket, setSocket] = useState<Socket | null>(null);
   const [isConnected, setIsConnected] = useState(false);
@@ -68,8 +35,18 @@ export const SocketProvider: React.FC<SocketProviderProps> = ({ children }) => {
         return;
       }
 
-      const baseUrl = await getApiBaseUrl();
-      const socketUrl = baseUrl.startsWith('http') ? baseUrl : `http://${baseUrl}`;
+      // Use the centralized API URL from config/api.ts
+      // This ensures we use the same URL as the rest of the app (including .env vars)
+      const fullApiUrl = getCurrentApiBaseUrl();
+      
+      // The getCurrentApiBaseUrl includes /api/v1, we need just the base host
+      // e.g. http://192.168.1.5:8080/api/v1 -> http://192.168.1.5:8080
+      // or https://my-backend.com/api/v1 -> https://my-backend.com
+      let socketUrl = fullApiUrl;
+      
+      if (socketUrl.includes('/api/')) {
+        socketUrl = socketUrl.split('/api/')[0];
+      }
 
       console.log('Connecting to Socket.io server:', socketUrl);
 
