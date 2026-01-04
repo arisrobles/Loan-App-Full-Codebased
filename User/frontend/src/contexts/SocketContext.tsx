@@ -1,4 +1,5 @@
 import React, { createContext, useContext, useEffect, useState, ReactNode } from 'react';
+import { AppState, AppStateStatus } from 'react-native';
 import { io, Socket } from 'socket.io-client';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { getCurrentApiBaseUrl } from '../config/api';
@@ -13,8 +14,8 @@ interface SocketContextType {
 const SocketContext = createContext<SocketContextType>({
   socket: null,
   isConnected: false,
-  connect: () => {},
-  disconnect: () => {},
+  connect: () => { },
+  disconnect: () => { },
 });
 
 export const useSocket = () => useContext(SocketContext);
@@ -38,12 +39,12 @@ export const SocketProvider: React.FC<SocketProviderProps> = ({ children }) => {
       // Use the centralized API URL from config/api.ts
       // This ensures we use the same URL as the rest of the app (including .env vars)
       const fullApiUrl = getCurrentApiBaseUrl();
-      
+
       // The getCurrentApiBaseUrl includes /api/v1, we need just the base host
       // e.g. http://192.168.1.5:8080/api/v1 -> http://192.168.1.5:8080
       // or https://my-backend.com/api/v1 -> https://my-backend.com
       let socketUrl = fullApiUrl;
-      
+
       if (socketUrl.includes('/api/')) {
         socketUrl = socketUrl.split('/api/')[0];
       }
@@ -92,7 +93,18 @@ export const SocketProvider: React.FC<SocketProviderProps> = ({ children }) => {
   useEffect(() => {
     connect();
 
+    const subscription = AppState.addEventListener('change', (nextAppState) => {
+      if (nextAppState === 'active') {
+        console.log('App active, reconnecting socket...');
+        connect();
+      } else if (nextAppState === 'background') {
+        console.log('App background, disconnecting socket...');
+        disconnect();
+      }
+    });
+
     return () => {
+      subscription.remove();
       disconnect();
     };
   }, []);

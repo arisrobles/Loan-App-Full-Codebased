@@ -1,4 +1,7 @@
 import axios from 'axios';
+
+// Fix for strict TypeScript environment where window might not be defined
+declare const window: any;
 import { Platform } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import Constants from 'expo-constants';
@@ -22,7 +25,7 @@ const extractIPFromExpoUrl = (): string | null => {
 
     for (const source of sources) {
       if (!source) continue;
-      
+
       // Extract IP from formats like "192.168.8.110:8081", "exp://192.168.8.110:8081", or "localhost:8081"
       const match = source.match(/(\d+\.\d+\.\d+\.\d+)/);
       if (match && match[1]) {
@@ -51,12 +54,12 @@ const testApiConnection = async (url: string): Promise<boolean> => {
   try {
     const controller = new AbortController();
     const timeoutId = setTimeout(() => controller.abort(), 3000);
-    
+
     const response = await fetch(`${url}/health`, {
       method: 'GET',
       signal: controller.signal,
     });
-    
+
     clearTimeout(timeoutId);
     return response.ok;
   } catch {
@@ -131,9 +134,9 @@ const getApiBaseUrl = async (forceRefresh: boolean = false, testConnection: bool
 };
 
 // Initialize API base URL (will be set asynchronously)
-let API_BASE_URL = __DEV__ 
-  ? Platform.OS === 'android' 
-    ? 'http://10.0.2.2:8080' 
+let API_BASE_URL = __DEV__
+  ? Platform.OS === 'android'
+    ? 'http://10.0.2.2:8080'
     : 'http://localhost:8080'
   : 'http://your-production-server.com:8080';
 
@@ -163,6 +166,15 @@ if (typeof window !== 'undefined' && 'addEventListener' in window) {
   });
 }
 
+// Refresh API URL when app comes to foreground
+import { AppState } from 'react-native';
+AppState.addEventListener('change', (nextAppState) => {
+  if (nextAppState === 'active') {
+    console.log('📱 App came to foreground, verifying API connection...');
+    refreshApiUrl().catch(err => console.error('Failed to refresh API on foreground:', err));
+  }
+});
+
 /**
  * Manually set the API base URL (useful for configuration screens)
  */
@@ -172,7 +184,7 @@ export const setApiBaseUrl = async (url: string, skipTest: boolean = false): Pro
     if (!url.startsWith('http://') && !url.startsWith('https://')) {
       throw new Error('URL must start with http:// or https://');
     }
-    
+
     // Test connection before saving (unless skipped)
     if (!skipTest) {
       const isReachable = await testApiConnection(url);
@@ -180,7 +192,7 @@ export const setApiBaseUrl = async (url: string, skipTest: boolean = false): Pro
         throw new Error('Cannot reach server at this URL. Please check if the backend is running.');
       }
     }
-    
+
     await AsyncStorage.setItem(STORAGE_KEY, url);
     API_BASE_URL = url;
     // Update axios instance baseURL
@@ -227,7 +239,7 @@ api.interceptors.request.use(
       if (token) {
         config.headers.Authorization = `Bearer ${token}`;
       }
-      
+
       // If FormData, handle Content-Type properly
       if (config.data instanceof FormData) {
         // If Content-Type is explicitly set to 'multipart/form-data', keep it
@@ -279,7 +291,7 @@ api.interceptors.response.use(
       });
       // Don't retry automatically - let the error propagate
     }
-    
+
     if (error.response?.status === 401) {
       // Token expired or invalid - clear storage and redirect to login
       await AsyncStorage.removeItem('authToken');
