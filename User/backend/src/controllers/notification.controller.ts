@@ -21,7 +21,7 @@ export const getNotifications = async (req: AuthRequest, res: Response, next: Ne
       where.isRead = false;
     }
 
-    // @ts-expect-error - Prisma Client needs regeneration (run: npx prisma generate)
+    // Prisma Client needs regeneration (run: npx prisma generate)
     const notifications = await prisma.notification.findMany({
       where,
       include: {
@@ -39,7 +39,7 @@ export const getNotifications = async (req: AuthRequest, res: Response, next: Ne
     });
 
     // Count unread notifications
-    // @ts-expect-error - Prisma Client needs regeneration
+    // Prisma Client needs regeneration
     const unreadCount = await prisma.notification.count({
       where: {
         borrowerId: BigInt(req.borrowerId),
@@ -76,7 +76,7 @@ export const markAsRead = async (req: AuthRequest, res: Response, next: NextFunc
     const { id } = req.params;
 
     // Verify notification belongs to borrower
-    // @ts-expect-error - Prisma Client needs regeneration
+    // Prisma Client needs regeneration
     const notification = await prisma.notification.findFirst({
       where: {
         id: BigInt(id),
@@ -91,7 +91,7 @@ export const markAsRead = async (req: AuthRequest, res: Response, next: NextFunc
       });
     }
 
-    // @ts-expect-error - Prisma Client needs regeneration
+    // Prisma Client needs regeneration
     await prisma.notification.update({
       where: { id: BigInt(id) },
       data: {
@@ -115,7 +115,7 @@ export const markAllAsRead = async (req: AuthRequest, res: Response, next: NextF
       throw new AppError('User not authenticated', 401);
     }
 
-    // @ts-expect-error - Prisma Client needs regeneration
+    // Prisma Client needs regeneration
     await prisma.notification.updateMany({
       where: {
         borrowerId: BigInt(req.borrowerId),

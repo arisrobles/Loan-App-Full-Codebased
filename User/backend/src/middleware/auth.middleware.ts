@@ -70,7 +70,7 @@ export const authenticateToken = async (
       email: borrower.email || '',
       fullName: borrower.fullName,
     };
-    next();
+    return next();
   } catch (error) {
     if (error instanceof jwt.JsonWebTokenError) {
       return res.status(403).json({
@@ -78,6 +78,6 @@ export const authenticateToken = async (
         message: 'Invalid or expired token',
       });
     }
-    next(error);
+    return next(error);
   }
 };

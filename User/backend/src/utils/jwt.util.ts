@@ -13,7 +13,7 @@ export const generateToken = (payload: TokenPayload): string => {
 
   const expiresIn = process.env.JWT_EXPIRES_IN || '7d';
 
-  return jwt.sign(payload, secret, { expiresIn });
+  return jwt.sign(payload, secret, { expiresIn: expiresIn as any });
 };
 
 export const verifyToken = (token: string): TokenPayload => {

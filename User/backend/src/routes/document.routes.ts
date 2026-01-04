@@ -7,7 +7,7 @@ const router = express.Router();
 router.use(authenticateToken);
 
 // Handle multer errors
-const handleMulterError = (err: any, req: any, res: any, next: any) => {
+const handleMulterError = (err: any, _req: any, res: any, next: any) => {
   if (err) {
     console.error('❌ Multer error:', err);
     if (err.code === 'LIMIT_FILE_SIZE') {

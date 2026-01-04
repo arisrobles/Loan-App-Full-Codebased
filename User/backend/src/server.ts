@@ -18,6 +18,12 @@ import { initializeSocket } from './socket/socket.server';
 dotenv.config();
 
 const app = express();
+
+// Fix for BigInt serialization
+(BigInt.prototype as any).toJSON = function () {
+  return this.toString();
+};
+
 const httpServer = createServer(app);
 const PORT = parseInt(process.env.PORT || '8080', 10);
 
@@ -76,17 +82,46 @@ app.use((_req, res) => {
 });
 
 httpServer.listen(PORT, '0.0.0.0', () => {
+  const publicUrl = process.env.RENDER_EXTERNAL_URL || process.env.PUBLIC_URL;
+  const localBase = `http://localhost:${PORT}`;
+  const apiPath = `/api/${API_VERSION}`;
+  const healthPath = `/health`;
+
+  // Database Connection Logging
+  const dbUrl = process.env.DATABASE_URL;
+  if (!dbUrl) {
+    console.error('❌ CRITICAL: DATABASE_URL environment variable is NOT set!');
+  } else {
+    try {
+      // Mask credentials for safe logging: schema://user:password@host:port/db
+      const maskedUrl = dbUrl.replace(/(:\/\/)([^:]+):([^@]+)@/, '$1$2:****@');
+      console.log(`🗄️ Database Config: ${maskedUrl}`);
+
+      const isLocal = dbUrl.includes('localhost') || dbUrl.includes('127.0.0.1');
+      if (isLocal && process.env.NODE_ENV !== 'test') {
+        console.warn('⚠️ WARNING: using LOCALHOST database connection. This will fail if deployed to cloud/containers (like Render) unless using a sidecar.');
+      }
+    } catch (e) {
+      console.log('🗄️ Database Config: [Complex/Invalid Format]');
+    }
+  }
+
   console.log(`🚀 Server running on port ${PORT}`);
-  console.log(`📡 API available at http://localhost:${PORT}/api/${API_VERSION}`);
-  console.log(`🌐 Server accessible on network at http://YOUR_LOCAL_IP:${PORT}/api/${API_VERSION}`);
-  console.log(`🏥 Health check: http://localhost:${PORT}/health`);
+  if (publicUrl) {
+    console.log(`🔗 Public URL: ${publicUrl}`);
+    console.log(`📡 API available at ${publicUrl}${apiPath}`);
+    console.log(`🏥 Health check: ${publicUrl}${healthPath}`);
+  } else {
+    console.log(`📡 API available at ${localBase}${apiPath}`);
+    console.log(`🏥 Health check: ${localBase}${healthPath}`);
+    console.log(`🌐 Server accessible on network at http://YOUR_LOCAL_IP:${PORT}${apiPath}`);
+    console.log(`\n💡 To find your local IP:`);
+    console.log(`   Windows: ipconfig | findstr IPv4`);
+    console.log(`   Mac/Linux: ifconfig | grep "inet " | grep -v 127.0.0.1`);
+  }
   console.log(`💬 Socket.io server initialized`);
-  console.log(`\n💡 To find your local IP:`);
-  console.log(`   Windows: ipconfig | findstr IPv4`);
-  console.log(`   Mac/Linux: ifconfig | grep "inet " | grep -v 127.0.0.1`);
 });
 
 export { io };
 export default app;
-
 

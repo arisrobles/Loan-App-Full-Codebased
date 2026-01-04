@@ -14,9 +14,9 @@ export class AppError extends Error {
 
 export const errorHandler = (
   err: Error | AppError,
-  req: Request,
+  _req: Request,
   res: Response,
-  next: NextFunction
+  _next: NextFunction
 ) => {
   if (err instanceof AppError) {
     return res.status(err.statusCode).json({
@@ -46,7 +46,7 @@ export const errorHandler = (
     console.error('💾 Full error:', JSON.stringify(err, Object.getOwnPropertyNames(err), 2));
   }
   
-  res.status(500).json({
+  return res.status(500).json({
     success: false,
     message: process.env.NODE_ENV === 'production' 
       ? 'Internal server error' 

@@ -52,7 +52,7 @@ export const getProfile = async (req: AuthRequest, res: Response, next: NextFunc
     }
 
     // Return data directly to match frontend expectations
-    res.json({
+    return res.json({
       id: borrower.id.toString(),
       email: borrower.email,
       fullName: borrower.fullName,
@@ -70,7 +70,7 @@ export const getProfile = async (req: AuthRequest, res: Response, next: NextFunc
       createdAt: borrower.createdAt,
     });
   } catch (error) {
-    next(error);
+    return next(error);
   }
 };
 
@@ -84,11 +84,11 @@ export const updateProfile = async (req: AuthRequest, res: Response, next: NextF
 
     // Build update data object with all fields
     const updateData: any = {};
-    
+
     // Required/important fields
     if (validatedData.fullName !== undefined) updateData.fullName = validatedData.fullName;
     if (validatedData.email !== undefined) updateData.email = validatedData.email;
-    
+
     // Optional string fields - allow clearing by sending empty string
     if (validatedData.phone !== undefined) updateData.phone = validatedData.phone || null;
     if (validatedData.address !== undefined) updateData.address = validatedData.address || null;
@@ -96,17 +96,25 @@ export const updateProfile = async (req: AuthRequest, res: Response, next: NextF
     if (validatedData.sex !== undefined) updateData.sex = validatedData.sex || null;
     if (validatedData.occupation !== undefined) updateData.occupation = validatedData.occupation || null;
     if (validatedData.civilStatus !== undefined) updateData.civilStatus = validatedData.civilStatus || null;
-    
-    // Birthday - convert string to Date
+
+    // Birthday - convert string to Date safely
     if (validatedData.birthday !== undefined) {
-      updateData.birthday = validatedData.birthday 
-        ? new Date(validatedData.birthday) 
-        : null;
+      if (!validatedData.birthday) {
+        updateData.birthday = null;
+      } else {
+        const date = new Date(validatedData.birthday);
+        if (!isNaN(date.getTime())) {
+          updateData.birthday = date;
+        }
+      }
     }
-    
+
     // Monthly income - convert to Decimal
     if (validatedData.monthlyIncome !== undefined) {
-      updateData.monthlyIncome = validatedData.monthlyIncome || null;
+      // Handle 0 correctly (don't convert to null)
+      updateData.monthlyIncome = (validatedData.monthlyIncome === null || isNaN(validatedData.monthlyIncome))
+        ? null
+        : validatedData.monthlyIncome;
     }
 
     // Check if email already exists (if being updated)
@@ -174,6 +182,6 @@ export const updateProfile = async (req: AuthRequest, res: Response, next: NextF
         errors: error.errors,
       });
     }
-    next(error);
+    return next(error);
   }
 };

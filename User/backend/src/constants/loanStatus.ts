@@ -39,22 +39,24 @@ export const getLoanStatusDisplay = (status: string): string => {
  * Check if status is a pending/active status (not closed, rejected, or cancelled)
  */
 export const isActiveLoanStatus = (status: string): boolean => {
-  return [
+  const activeStatuses: string[] = [
     LoanStatus.NEW_APPLICATION,
     LoanStatus.UNDER_REVIEW,
     LoanStatus.APPROVED,
     LoanStatus.FOR_RELEASE,
     LoanStatus.DISBURSED,
-  ].includes(status as LoanStatusType);
+  ];
+  return activeStatuses.includes(status);
 };
 
 /**
  * Check if status allows cancellation
  */
 export const isCancellableStatus = (status: string): boolean => {
-  return [
+  const cancellableStatuses: string[] = [
     LoanStatus.NEW_APPLICATION,
     LoanStatus.UNDER_REVIEW,
-  ].includes(status as LoanStatusType);
+  ];
+  return cancellableStatuses.includes(status);
 };
 
