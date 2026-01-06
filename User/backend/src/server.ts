@@ -46,7 +46,7 @@ app.use(cors({
 
 // Body parsing middleware
 app.use(express.json({ limit: '10mb' }));
-app.use((err: any, req: express.Request, res: express.Response, next: express.NextFunction) => {
+app.use((err: any, _req: express.Request, res: express.Response, next: express.NextFunction) => {
   if (err instanceof SyntaxError && 'body' in err) {
     console.error('❌ JSON Parse Error:', err.message);
     console.error('🔍 offending body:', (err as any).body);
@@ -56,7 +56,7 @@ app.use((err: any, req: express.Request, res: express.Response, next: express.Ne
       error: err.message
     });
   }
-  next(err);
+  return next(err);
 });
 app.use(express.urlencoded({ extended: true, limit: '10mb' }));
 
