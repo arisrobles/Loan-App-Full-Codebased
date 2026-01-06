@@ -43,9 +43,23 @@ app.use(cors({
   credentials: true,
 }));
 
+
 // Body parsing middleware
 app.use(express.json({ limit: '10mb' }));
+app.use((err: any, req: express.Request, res: express.Response, next: express.NextFunction) => {
+  if (err instanceof SyntaxError && 'body' in err) {
+    console.error('❌ JSON Parse Error:', err.message);
+    console.error('🔍 offending body:', (err as any).body);
+    return res.status(400).json({
+      success: false,
+      message: 'Invalid JSON payload received',
+      error: err.message
+    });
+  }
+  next(err);
+});
 app.use(express.urlencoded({ extended: true, limit: '10mb' }));
+
 
 // Serve uploaded files
 // Serve base uploads directory
