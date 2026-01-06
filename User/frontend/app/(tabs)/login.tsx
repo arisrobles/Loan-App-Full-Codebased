@@ -143,14 +143,7 @@ export default function LoginScreen() {
               </LinearGradient>
             </TouchableOpacity>
 
-            <TouchableOpacity
-              style={{ alignItems: 'center', marginTop: 16 }}
-              onPress={() => router.push('./forgot-password')}
-            >
-              <Text style={{ color: '#9CA3AF', fontSize: 14 }}>
-                Forgot Password?
-              </Text>
-            </TouchableOpacity>
+
 
             <TouchableOpacity
               style={styles.registerContainer}
