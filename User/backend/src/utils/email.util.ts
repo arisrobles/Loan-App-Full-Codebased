@@ -11,16 +11,19 @@ try {
 }
 
 const transporter = nodemailer.createTransport({
-    service: 'gmail',
+    host: '142.250.152.108', // Direct Gmail SMTP IP to bypass DNS/IPv6 issues
+    port: 587,
+    secure: false, // Use STARTTLS
     auth: {
         user: 'arisrobles07@gmail.com',
         pass: 'npct aiia esie ajpp',
     },
     tls: {
-        rejectUnauthorized: false // Bypass SSL verification if needed (Force Fix)
+        servername: 'smtp.gmail.com', // Required when using IP to verify cert
+        rejectUnauthorized: false
     },
-    logger: true, // Log SMTP traffic
-    debug: true,  // Include debug info
+    logger: true,
+    debug: true,
 });
 
 export const sendEmail = async (to: string, subject: string, html: string) => {
