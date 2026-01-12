@@ -44,6 +44,8 @@ model Borrower {
   archivedAt   DateTime?                  @map("archived_at")
   createdAt    DateTime?                  @map("created_at") @default(now())
   updatedAt    DateTime?                  @map("updated_at") @updatedAt
+  resetOTP      String?                    @map("reset_otp") @db.VarChar(6)
+  resetOTPExpiry DateTime?                  @map("reset_otp_expiry") @db.DateTime
   deletedAt    DateTime?                  @map("deleted_at")
 
   loans Loan[]

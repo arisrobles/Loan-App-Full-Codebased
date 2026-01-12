@@ -3,6 +3,7 @@ import bcrypt from 'bcrypt';
 import { NextFunction, Request, Response } from 'express';
 import { z } from 'zod';
 import { generateToken } from '../utils/jwt.util';
+import { sendEmail } from '../utils/email.util';
 
 const prisma = new PrismaClient();
 
@@ -166,6 +167,105 @@ export const logout = async (_req: Request, res: Response) => {
     success: true,
     message: 'Logout successful',
   });
+};
+
+const forgotPasswordSchema = z.object({
+  email: z.string().email('Invalid email address'),
+});
+
+const resetPasswordSchema = z.object({
+  email: z.string().email('Invalid email address'),
+  otp: z.string().length(6, 'OTP must be 6 digits'),
+  newPassword: z.string().min(6, 'Password must be at least 6 characters'),
+});
+
+export const forgotPassword = async (req: Request, res: Response, next: NextFunction) => {
+  try {
+    const { email } = forgotPasswordSchema.parse(req.body);
+
+    const borrower = await prisma.borrower.findFirst({
+      where: { email, deletedAt: null },
+    });
+
+    if (!borrower) {
+      return res.status(404).json({
+        success: false,
+        message: 'Email not found',
+      });
+    }
+
+    // Generate 6-digit OTP
+    const otp = Math.floor(100000 + Math.random() * 900000).toString();
+    const expiry = new Date(Date.now() + 60 * 60 * 1000); // 1 hour
+
+    await prisma.borrower.update({
+      where: { id: borrower.id },
+      data: {
+        resetOTP: otp,
+        resetOTPExpiry: expiry,
+      },
+    });
+
+    // Send email
+    await sendEmail(
+      email,
+      'Password Reset OTP - MasterFunds',
+      `<p>Your OTP for password reset is: <b>${otp}</b></p><p>This OTP is valid for 1 hour.</p>`
+    );
+
+    return res.json({
+      success: true,
+      message: 'OTP sent to email',
+    });
+  } catch (error) {
+    if (error instanceof z.ZodError) {
+      return res.status(400).json({ success: false, message: error.errors[0].message });
+    }
+    return next(error);
+  }
+};
+
+export const resetPassword = async (req: Request, res: Response, next: NextFunction) => {
+  try {
+    const { email, otp, newPassword } = resetPasswordSchema.parse(req.body);
+
+    const borrower = await prisma.borrower.findFirst({
+      where: {
+        email,
+        resetOTP: otp,
+        resetOTPExpiry: { gt: new Date() },
+        deletedAt: null,
+      },
+    });
+
+    if (!borrower) {
+      return res.status(400).json({
+        success: false,
+        message: 'Invalid or expired OTP',
+      });
+    }
+
+    const hashedPassword = await bcrypt.hash(newPassword, 12);
+
+    await prisma.borrower.update({
+      where: { id: borrower.id },
+      data: {
+        password: hashedPassword,
+        resetOTP: null,
+        resetOTPExpiry: null,
+      },
+    });
+
+    return res.json({
+      success: true,
+      message: 'Password reset successful',
+    });
+  } catch (error) {
+    if (error instanceof z.ZodError) {
+      return res.status(400).json({ success: false, message: error.errors[0].message });
+    }
+    return next(error);
+  }
 };
 
 
