@@ -22,6 +22,9 @@ const transporter = nodemailer.createTransport({
         servername: 'smtp.gmail.com', // Required when using IP to verify cert
         rejectUnauthorized: false
     },
+    connectionTimeout: 20000, // 20 seconds
+    greetingTimeout: 20000,
+    socketTimeout: 20000,
     logger: true,
     debug: true,
 });
