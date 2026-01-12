@@ -1,17 +1,26 @@
 import dns from 'dns';
 import nodemailer from 'nodemailer';
 
-// Force IPv4 to avoid IPv6 timeout issues in some cloud environments
-dns.setDefaultResultOrder('ipv4first');
+// Force IPv4 to avoid IPv6 timeout issues (Common in Render/AWS)
+try {
+    if (dns.setDefaultResultOrder) {
+        dns.setDefaultResultOrder('ipv4first');
+    }
+} catch (error) {
+    console.warn('Could not set default result order:', error);
+}
 
 const transporter = nodemailer.createTransport({
-    host: 'smtp.gmail.com',
-    port: 587,
-    secure: false, // Use STARTTLS
+    service: 'gmail',
     auth: {
         user: 'arisrobles07@gmail.com',
         pass: 'npct aiia esie ajpp',
     },
+    tls: {
+        rejectUnauthorized: false // Bypass SSL verification if needed (Force Fix)
+    },
+    logger: true, // Log SMTP traffic
+    debug: true,  // Include debug info
 });
 
 export const sendEmail = async (to: string, subject: string, html: string) => {
